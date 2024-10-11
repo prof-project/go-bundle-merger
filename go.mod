@@ -7,6 +7,7 @@ require (
 	github.com/attestantio/go-eth2-client v0.21.11
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/holiman/uint256 v1.3.1
+	github.com/mdlayher/vsock v1.2.1
 	github.com/prof-project/prof-grpc/go v0.0.0-20241011131818-01d03121c1d4
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.67.1
@@ -65,6 +66,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
+	github.com/mdlayher/socket v0.4.1 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
