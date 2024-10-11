@@ -1,11 +1,5 @@
 Implementation of the PROF bundle merger service.
 
-## Building the bundle merger gRPC spec in /profpb 
-
-```
-make
-```
-
 ## Running tests
 
 ```
