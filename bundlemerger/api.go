@@ -21,10 +21,15 @@ type BundleMergerServer struct {
 }
 
 // NewBundleMergerServer creates a new BundleMergerServer
-func NewBundleMergerServer(ethInstance *eth.Ethereum) *BundleMergerServer {
+func NewBundleMergerServerEth(ethInstance *eth.Ethereum) *BundleMergerServer {
 	return &BundleMergerServer{
 		eth: ethInstance,
 	}
+}
+
+// NewBundleMergerServer creates a new BundleMergerServer
+func NewBundleMergerServer() *BundleMergerServer {
+	return &BundleMergerServer{}
 }
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
