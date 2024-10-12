@@ -31,3 +31,8 @@ Now, one needs to run the client. For this, we need to run Socat to Forward TCP 
 ```
 sudo socat TCP-LISTEN:50051,reuseaddr,fork VSOCK-CONNECT:16:50051
 ```
+
+Run the client:
+```
+./bundlemerger-client
+```
