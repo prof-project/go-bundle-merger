@@ -24,7 +24,7 @@ func main() {
 
 	// Create and register the BundleMergerServer
 	bundleMergerServer := bundlemerger.NewBundleMergerServer()
-	pb.RegisterBundleMergerServer(s, bundleMergerServer)
+	pb.RegisterBundleMergerServer(s, bundleMergerServer.UnimplementedBundleMergerServer)
 
 	log.Printf("Server listening on vsock port %d", port)
 	if err := s.Serve(listener); err != nil {

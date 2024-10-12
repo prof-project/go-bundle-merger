@@ -3,7 +3,7 @@ Implementation of the PROF bundle merger service.
 ## Running tests for the bundle-merger
 
 ```
-cd api
+cd bundlemerger
 go test -timeout 30s -run ^TestEnrichBlock$ -v  
 ```
 

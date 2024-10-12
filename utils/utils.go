@@ -14,8 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/prof-project/prof-grpc/go/profpb" 
 	"github.com/holiman/uint256"
+	"github.com/prof-project/prof-grpc/go/profpb"
 )
 
 type DenebEnrichBlockRequest struct {
@@ -62,13 +62,12 @@ func ExecutableDataToExecutionPayloadV3(data *engine.ExecutableData) (*deneb.Exe
 	}, nil
 }
 
-// Currently only works for deneb
+// Converts a DenebEnrichBlockRequest to a profpb.EnrichBlockRequest.
 func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.EnrichBlockRequest, error) {
-	transactions := make([]*profpb.CompressTx, len(request.PayloadBundle.ExecutionPayload.Transactions))
+	transactions := make([]*profpb.Transaction, len(request.PayloadBundle.ExecutionPayload.Transactions))
 	for i, tx := range request.PayloadBundle.ExecutionPayload.Transactions {
-		transactions[i] = &profpb.CompressTx{
+		transactions[i] = &profpb.Transaction{
 			RawData: tx,
-			ShortID: 0,
 		}
 	}
 
@@ -84,8 +83,8 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.Enric
 
 	return &profpb.EnrichBlockRequest{
 		Uuid: request.Uuid,
-		PayloadBundle: &profpb.ExecutionPayloadAndBlobsBundle{
-			ExecutionPayload: &profpb.ExecutionPayload{
+		ExecutionPayloadAndBlobsBundle: &profpb.ExecutionPayloadAndBlobsBundle{
+			ExecutionPayload: &profpb.ExecutionPayloadUncompressed{
 				ParentHash:    request.PayloadBundle.ExecutionPayload.ParentHash[:],
 				StateRoot:     request.PayloadBundle.ExecutionPayload.StateRoot[:],
 				ReceiptsRoot:  request.PayloadBundle.ExecutionPayload.ReceiptsRoot[:],
@@ -117,21 +116,19 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.Enric
 			GasUsed:              request.BidTrace.GasUsed,
 			Value:                request.BidTrace.Value.Hex(),
 		},
-		ParentBeaconBlockRoot: request.ParentBeaconBlockRoot[:],
+		ParentBeaconRoot: request.ParentBeaconBlockRoot[:],
 	}, nil
 }
 
-// Currently only works for deneb
+// Converts a profpb.EnrichBlockRequest to a DenebEnrichBlockRequest.
 func ProtoRequestToDenebRequest(request *profpb.EnrichBlockRequest) (*DenebEnrichBlockRequest, error) {
-	transactions := make([]bellatrix.Transaction, len(request.PayloadBundle.ExecutionPayload.Transactions))
-	for index, tx := range request.PayloadBundle.ExecutionPayload.Transactions {
+	transactions := make([]bellatrix.Transaction, len(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions))
+	for index, tx := range request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions {
 		transactions[index] = tx.RawData
 	}
 
-	// Withdrawal is defined in capella spec
-	// https://github.com/attestantio/go-eth2-client/blob/21f7dd480fed933d8e0b1c88cee67da721c80eb2/spec/deneb/executionpayload.go#L42
-	withdrawals := make([]*capella.Withdrawal, len(request.PayloadBundle.ExecutionPayload.Withdrawals))
-	for index, withdrawal := range request.PayloadBundle.ExecutionPayload.Withdrawals {
+	withdrawals := make([]*capella.Withdrawal, len(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Withdrawals))
+	for index, withdrawal := range request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Withdrawals {
 		withdrawals[index] = &capella.Withdrawal{
 			ValidatorIndex: phase0.ValidatorIndex(withdrawal.ValidatorIndex),
 			Index:          capella.WithdrawalIndex(withdrawal.Index),
@@ -142,47 +139,49 @@ func ProtoRequestToDenebRequest(request *profpb.EnrichBlockRequest) (*DenebEnric
 
 	// BlobsBundle
 	blobsBundle := &builderApiDeneb.BlobsBundle{
-		Commitments: make([]consensus.KZGCommitment, len(request.PayloadBundle.BlobsBundle.Commitments)),
-		Proofs:      make([]consensus.KZGProof, len(request.PayloadBundle.BlobsBundle.Proofs)),
-		Blobs:       make([]consensus.Blob, len(request.PayloadBundle.BlobsBundle.Blobs)),
+		Commitments: make([]consensus.KZGCommitment, len(request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Commitments)),
+		Proofs:      make([]consensus.KZGProof, len(request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Proofs)),
+		Blobs:       make([]consensus.Blob, len(request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Blobs)),
 	}
-	for index, commitment := range request.PayloadBundle.BlobsBundle.Commitments {
+	for index, commitment := range request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Commitments {
 		copy(blobsBundle.Commitments[index][:], commitment)
 	}
 
-	for index, proof := range request.PayloadBundle.BlobsBundle.Proofs {
+	for index, proof := range request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Proofs {
 		copy(blobsBundle.Proofs[index][:], proof)
 	}
 
-	for index, blob := range request.PayloadBundle.BlobsBundle.Blobs {
+	for index, blob := range request.ExecutionPayloadAndBlobsBundle.BlobsBundle.Blobs {
 		copy(blobsBundle.Blobs[index][:], blob)
 	}
 
+	// Convert BidTrace.Value from string to *uint256.Int
 	value, err := uint256.FromHex(request.BidTrace.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert deneb block value %s to uint256: %s", request.BidTrace.Value, err.Error())
 	}
 
 	return &DenebEnrichBlockRequest{
+		Uuid: request.Uuid,
 		PayloadBundle: &builderApiDeneb.ExecutionPayloadAndBlobsBundle{
 			ExecutionPayload: &deneb.ExecutionPayload{
-				ParentHash:    b32(request.PayloadBundle.ExecutionPayload.ParentHash),
-				StateRoot:     b32(request.PayloadBundle.ExecutionPayload.StateRoot),
-				ReceiptsRoot:  b32(request.PayloadBundle.ExecutionPayload.ReceiptsRoot),
-				LogsBloom:     b256(request.PayloadBundle.ExecutionPayload.LogsBloom),
-				PrevRandao:    b32(request.PayloadBundle.ExecutionPayload.PrevRandao),
-				BaseFeePerGas: byteSliceToUint256Int(request.PayloadBundle.ExecutionPayload.BaseFeePerGas),
-				FeeRecipient:  b20(request.PayloadBundle.ExecutionPayload.FeeRecipient),
-				BlockHash:     b32(request.PayloadBundle.ExecutionPayload.BlockHash),
-				ExtraData:     request.PayloadBundle.ExecutionPayload.ExtraData,
-				BlockNumber:   request.PayloadBundle.ExecutionPayload.BlockNumber,
-				GasLimit:      request.PayloadBundle.ExecutionPayload.GasLimit,
-				Timestamp:     request.PayloadBundle.ExecutionPayload.Timestamp,
-				GasUsed:       request.PayloadBundle.ExecutionPayload.GasUsed,
+				ParentHash:    b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.ParentHash),
+				StateRoot:     b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.StateRoot),
+				ReceiptsRoot:  b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.ReceiptsRoot),
+				LogsBloom:     b256(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.LogsBloom),
+				PrevRandao:    b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.PrevRandao),
+				BaseFeePerGas: byteSliceToUint256Int(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.BaseFeePerGas),
+				FeeRecipient:  b20(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.FeeRecipient),
+				BlockHash:     b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.BlockHash),
+				ExtraData:     request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.ExtraData,
+				BlockNumber:   request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.BlockNumber,
+				GasLimit:      request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.GasLimit,
+				Timestamp:     request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Timestamp,
+				GasUsed:       request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.GasUsed,
 				Transactions:  transactions,
 				Withdrawals:   withdrawals,
-				BlobGasUsed:   request.PayloadBundle.ExecutionPayload.BlobGasUsed,
-				ExcessBlobGas: request.PayloadBundle.ExecutionPayload.ExcessBlobGas,
+				BlobGasUsed:   request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.BlobGasUsed,
+				ExcessBlobGas: request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.ExcessBlobGas,
 			},
 			BlobsBundle: blobsBundle,
 		},
@@ -197,7 +196,7 @@ func ProtoRequestToDenebRequest(request *profpb.EnrichBlockRequest) (*DenebEnric
 			GasUsed:              request.BidTrace.GasUsed,
 			Value:                value,
 		},
-		ParentBeaconBlockRoot: common.BytesToHash(request.ParentBeaconBlockRoot),
+		ParentBeaconBlockRoot: common.BytesToHash(request.ParentBeaconRoot),
 	}, nil
 }
 
@@ -223,39 +222,56 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 	return protoBlobsBundle
 }
 
+// Helper functions
+
 // b20 converts a byte slice to a [20]byte.
 func b20(b []byte) [20]byte {
-	out := [20]byte{}
+	var out [20]byte
 	copy(out[:], b)
 	return out
 }
 
 // b32 converts a byte slice to a [32]byte.
 func b32(b []byte) [32]byte {
-	out := [32]byte{}
+	var out [32]byte
 	copy(out[:], b)
 	return out
 }
 
 // b48 converts a byte slice to a [48]byte.
 func b48(b []byte) [48]byte {
-	out := [48]byte{}
+	var out [48]byte
 	copy(out[:], b)
 	return out
 }
 
 // b96 converts a byte slice to a [96]byte.
 func b96(b []byte) [96]byte {
-	out := [96]byte{}
+	var out [96]byte
 	copy(out[:], b)
 	return out
 }
 
 // b256 converts a byte slice to a [256]byte.
 func b256(b []byte) [256]byte {
-	out := [256]byte{}
+	var out [256]byte
 	copy(out[:], b)
 	return out
+}
+
+// uint256ToBytes converts a *uint256.Int to a byte slice.
+func uint256ToBytes(u *uint256.Int) []byte {
+	if u == nil {
+		return nil
+	}
+	return u.Bytes()
+}
+
+// bytesToUint256 converts a byte slice to a *uint256.Int.
+func bytesToUint256(b []byte) *uint256.Int {
+	u := new(uint256.Int)
+	u.SetBytes(b)
+	return u
 }
 
 // uint256ToIntToByteSlice converts a *uint256.Int to a byte slice.

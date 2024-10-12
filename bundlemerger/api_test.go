@@ -31,9 +31,9 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
-	pb "github.com/prof-project/prof-grpc/go/profpb" 
-	"github.com/prof-project/go-bundle-merger/utils"
 	"github.com/holiman/uint256"
+	"github.com/prof-project/go-bundle-merger/utils"
+	pb "github.com/prof-project/prof-grpc/go/profpb"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -76,7 +76,7 @@ func TestEnrichBlock(t *testing.T) {
 
 	// Create a new BundleMergerServer
 	// Instead of block-validation API, bootstrap grpc server
-	server := NewBundleMergerServer(ethservice)
+	server := NewBundleMergerServerEth(ethservice)
 
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
@@ -296,20 +296,14 @@ func assembleBlock(api *BundleMergerServer, parentHash common.Hash, params *engi
 		BeaconRoot:   params.BeaconRoot,
 	}
 
-	fmt.Printf("BuildPayloadArgs: %+v\n", args) // Add this line to log the arguments
-
 	payload, err := api.eth.Miner().BuildPayload(args)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("BuildPayloadArgs: %+v\n", payload) // Add this line to log the arguments
-
 	if payload := payload.ResolveFull(); payload != nil {
 		return payload.ExecutionPayload, nil
 	}
-
-	fmt.Printf("BuildPayloadArgs: %+v\n", payload) // Add this line to log the arguments
 
 	return nil, errors.New("payload did not resolve")
 }
