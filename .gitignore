@@ -27,6 +27,7 @@ go.work.sum
 # Compiled Go binaries
 /enclave-server
 /bundlemerger-client
+/bundlemerger-server
 
 # Enclave Image File
 *.eif
