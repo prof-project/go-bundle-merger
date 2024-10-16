@@ -6,12 +6,12 @@ require (
 	github.com/attestantio/go-builder-client v0.5.0
 	github.com/attestantio/go-eth2-client v0.21.11
 	github.com/ethereum/go-ethereum v1.14.11
+	github.com/flashbots/go-boost-utils v1.8.0
 	github.com/holiman/uint256 v1.3.1
 	github.com/mdlayher/vsock v1.2.1
 	github.com/prof-project/prof-grpc/go v0.0.0-20241012171701-1a819d4d6d49
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.67.1
-	google.golang.org/protobuf v1.35.1
 )
 
 require (
@@ -53,12 +53,13 @@ require (
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/grafana/pyroscope-go/godeltaprof v0.1.7 // indirect
 	github.com/hashicorp/go-bexpr v0.1.10 // indirect
 	github.com/holiman/billy v0.0.0-20240216141850-2abb0c79d3c4 // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
-	github.com/klauspost/compress v1.16.0 // indirect
+	github.com/klauspost/compress v1.17.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -100,11 +101,12 @@ require (
 	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240814211410-ddb44dafa142 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240930140551-af27646dc61f // indirect
+	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/ethereum/go-ethereum => github.com/flashbots/builder v1.13.14-0.3.0
+replace github.com/ethereum/go-ethereum => github.com/prof-project/builder v1.0.2

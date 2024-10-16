@@ -5,8 +5,13 @@ import (
 	"fmt"
 	"io"
 
+	builderApi "github.com/attestantio/go-builder-client/api"
+	"github.com/attestantio/go-eth2-client/spec"
 	"github.com/ethereum/go-ethereum/beacon/engine"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
+	bv "github.com/ethereum/go-ethereum/eth/block-validation"
+	fbutils "github.com/flashbots/go-boost-utils/utils"
 	"github.com/prof-project/go-bundle-merger/utils"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
 	"google.golang.org/grpc/codes"
@@ -16,13 +21,15 @@ import (
 // BundleMergerServer implements the BundleMerger gRPC service
 type BundleMergerServer struct {
 	pb.UnimplementedBundleMergerServer
-	eth *eth.Ethereum
+	eth     *eth.Ethereum
+	profapi *bv.BlockValidationAPI
 }
 
 // NewBundleMergerServer creates a new BundleMergerServer
 func NewBundleMergerServerEth(ethInstance *eth.Ethereum) *BundleMergerServer {
 	return &BundleMergerServer{
-		eth: ethInstance,
+		eth:     ethInstance,
+		profapi: bv.NewBlockValidationAPI(ethInstance, nil, true, true), // TODO: profAPI.validateProfBlock does not respect the last two args, always treats them as true
 	}
 }
 
@@ -50,26 +57,63 @@ func (s *BundleMergerServer) EnrichBlock(stream pb.BundleMerger_EnrichBlockServe
 		}
 
 		// Convert Deneb Request to Block
-		block, err := engine.ExecutionPayloadV3ToBlock(denebRequest.PayloadBundle.ExecutionPayload, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
+		pbsBlock, err := engine.ExecutionPayloadV3ToBlock(denebRequest.PayloadBundle.ExecutionPayload, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
 		if err != nil {
 			return err
 		}
 
-		// Print Block to see that reqconstruction from gRPC works
-		fmt.Printf("got ExecutionPayloadV3ToBlock %+v\n", block)
+		// Print Block to see that reconstruction from gRPC works
+		fmt.Printf("got ExecutionPayloadV3ToBlock %+v\n", pbsBlock)
+
+		profBundle, err := s.getProfBundle()
+
+		if err != nil {
+			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
+		}
+
+		// Convert Deneb Request and Prof transactions to Block
+		block, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("PROF block before execution %+v\n", block)
+
+		profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
+		if err != nil {
+			return err
+		}
+
+		enrichedPayload := profValidationResp.ExecutionPayload
+		// TODO: save the execution payload.
+
+		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
+			&builderApi.VersionedExecutionPayload{ //nolint:exhaustivestruct
+				Version: spec.DataVersionDeneb,
+				Deneb:   enrichedPayload.ExecutionPayload,
+			},
+		)
+		if err != nil {
+			return err
+		}
 
 		// TODO - Currently returns empty DUMMY response, need to get tx from prof bundle
 		resp := &pb.EnrichBlockResponse{
 			Uuid:                   req.Uuid,
-			ExecutionPayloadHeader: &pb.ExecutionPayloadHeader{},
-			KzgCommitment:          [][]byte{}, // Updated to match the correct type
-			Value:                  0,
+			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb),
+			KzgCommitment:          utils.CommitmentsToProtoCommitments(enrichedPayload.BlobsBundle.Commitments),
+			Value:                  profValidationResp.Value.Uint64(), // TODO: https://github.com/prof-project/prof-grpc/issues/2
 		}
 
 		if err := stream.Send(resp); err != nil {
 			return status.Errorf(codes.Internal, "Failed to send response: %v", err)
 		}
 	}
+}
+
+func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
+	// TODO : will need to come from the sequencer
+	return make([][]byte, 0), nil
 }
 
 // GetEnrichedPayload implements the GetEnrichedPayload RPC method

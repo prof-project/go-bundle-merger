@@ -222,6 +222,16 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 	return protoBlobsBundle
 }
 
+// TODO: implement
+func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *profpb.ExecutionPayloadHeader {
+	return &profpb.ExecutionPayloadHeader{}
+}
+
+// TODO: implement
+func CommitmentsToProtoCommitments(commitments []deneb.KZGCommitment) [][]byte {
+	return [][]byte{}
+}
+
 // Helper functions
 
 // b20 converts a byte slice to a [20]byte.
