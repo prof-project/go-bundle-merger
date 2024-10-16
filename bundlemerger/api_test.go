@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,7 +21,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	beaconConsensus "github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -75,8 +75,8 @@ func TestEnrichBlock(t *testing.T) {
 	defer n.Close()
 
 	// Create a new BundleMergerServer
-	// Instead of block-validation API, bootstrap grpc server
-	server := NewBundleMergerServerEth(ethservice)
+	bundleService := NewBundleServiceServer()
+	server := NewBundleMergerServerEth(ethservice, bundleService)
 
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
@@ -121,15 +121,15 @@ func TestEnrichBlock(t *testing.T) {
 	cc, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
 
-	cc2, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 10000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
+	// cc2, _ := types.SignTx(types.NewContractCreation(nonce+2, new(big.Int), 10000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	// ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
 
-	baseFee := eip1559.CalcBaseFee(params.AllEthashProtocolChanges, parent)
-	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, testAddr, big.NewInt(10), 21000, baseFee, nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-	ethservice.TxPool().Add([]*types.Transaction{tx2}, true, true, false)
+	// baseFee := eip1559.CalcBaseFee(params.AllEthashProtocolChanges, parent)
+	// tx2, _ := types.SignTx(types.NewTransaction(nonce+3, testAddr, big.NewInt(10), 21000, baseFee, nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	// ethservice.TxPool().Add([]*types.Transaction{tx2}, true, true, false)
 
 	// Calculate total gas consumed by tx1 and tx2
-	totalGas := tx1.Gas() + tx2.Gas() + cc.Gas() + cc2.Gas()
+	totalGas := tx1.Gas() + cc.Gas()
 	fmt.Printf("Total gas consumed by tx1, cc, cc2 and tx2: %d\n", totalGas)
 
 	withdrawals := []*types.Withdrawal{
@@ -155,7 +155,7 @@ func TestEnrichBlock(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, len(execData.Withdrawals), 2)
-	require.EqualValues(t, len(execData.Transactions), 4)
+	require.EqualValues(t, len(execData.Transactions), 3)
 
 	payload, err := utils.ExecutableDataToExecutionPayloadV3(execData)
 	require.NoError(t, err)
@@ -191,6 +191,20 @@ func TestEnrichBlock(t *testing.T) {
 
 	req := protoRequest
 
+	// Filling transactions into the PROF pool
+	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, common.Address{0x16}, big.NewInt(10), 21000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	ethservice.TxPool().Add([]*types.Transaction{tx1}, true, true, false)
+
+	cc2, _ := types.SignTx(types.NewContractCreation(nonce+3, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+
+	// Add a bundle to the pool
+	bundle := &TxBundle{
+		BlockNumber: "0x" + strconv.FormatUint(parent.Number.Uint64()+1, 16),
+		Txs:         []*types.Transaction{tx2, cc2},
+	}
+	err = server.pool.addBundle(bundle, true)
+	require.NoError(t, err)
+
 	// Measure time for sending and receiving
 	start := time.Now()
 
@@ -213,9 +227,9 @@ func TestEnrichBlock(t *testing.T) {
 	require.Equal(t, req.Uuid, resp.Uuid)
 
 	// TODO: check enriched header, only once it is implemented
-	// require.NotNil(t, resp.EnrichedHeader)
-	// require.NotEmpty(t, resp.Commitments)
-	// require.NotEmpty(t, resp.EnrichedBidValue)
+	require.NotEmpty(t, resp.ExecutionPayloadHeader)
+	// require.NotEmpty(t, resp.KzgCommitment)
+	require.NotEmpty(t, resp.Value)
 
 	// Close the stream
 	err = stream.CloseSend()

@@ -26,6 +26,9 @@ func main() {
 	bundleMergerServer := bundlemerger.NewBundleMergerServer()
 	pb.RegisterBundleMergerServer(s, bundleMergerServer.UnimplementedBundleMergerServer)
 
+	bundleServiceServer := bundlemerger.NewBundleServiceServer()
+	pb.RegisterBundleServiceServer(s, bundleServiceServer)
+
 	log.Printf("Server listening on vsock port %d", port)
 	if err := s.Serve(listener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
