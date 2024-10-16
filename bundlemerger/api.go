@@ -97,7 +97,6 @@ func (s *BundleMergerServer) EnrichBlock(stream pb.BundleMerger_EnrichBlockServe
 			return err
 		}
 
-		// TODO - Currently returns empty DUMMY response, need to get tx from prof bundle
 		resp := &pb.EnrichBlockResponse{
 			Uuid:                   req.Uuid,
 			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb),

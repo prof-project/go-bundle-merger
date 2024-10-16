@@ -121,10 +121,16 @@ func TestEnrichBlock(t *testing.T) {
 	cc, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
 
+	cc2, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 10000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
+
 	baseFee := eip1559.CalcBaseFee(params.AllEthashProtocolChanges, parent)
 	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, testAddr, big.NewInt(10), 21000, baseFee, nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-
 	ethservice.TxPool().Add([]*types.Transaction{tx2}, true, true, false)
+
+	// Calculate total gas consumed by tx1 and tx2
+	totalGas := tx1.Gas() + tx2.Gas() + cc.Gas() + cc2.Gas()
+	fmt.Printf("Total gas consumed by tx1, cc, cc2 and tx2: %d\n", totalGas)
 
 	withdrawals := []*types.Withdrawal{
 		{
@@ -185,6 +191,9 @@ func TestEnrichBlock(t *testing.T) {
 
 	req := protoRequest
 
+	// Measure time for sending and receiving
+	start := time.Now()
+
 	// Send the request
 	err = stream.Send(req)
 	require.NoError(t, err)
@@ -192,8 +201,12 @@ func TestEnrichBlock(t *testing.T) {
 	// Receive the response
 	resp, err := stream.Recv()
 
-	// Print the response
+	// Calculate elapsed time
+	elapsed := time.Since(start)
+
+	// Print the response and elapsed time
 	fmt.Printf("Response: %+v\n", resp)
+	fmt.Printf("Time taken: %v\n", elapsed)
 	require.NoError(t, err)
 
 	// Verify the response
