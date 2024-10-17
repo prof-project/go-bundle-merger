@@ -26,18 +26,18 @@ import (
 // BundleMergerServer implements the BundleMerger gRPC service
 type BundleMergerServer struct {
 	pb.UnimplementedBundleMergerServer
-	eth     *eth.Ethereum
-	profapi *bv.BlockValidationAPI
-	pool    *TxBundlePool // Add this line to include the pool
+	eth                 *eth.Ethereum
+	profapi             *bv.BlockValidationAPI
+	pool                *TxBundlePool
+	enrichedPayloadPool *EnrichedPayloadPool
 }
 
-// NewBundleMergerServer creates a new BundleMergerServer
 func NewBundleMergerServerEth(ethInstance *eth.Ethereum, bundleService *BundleServiceServer) *BundleMergerServer {
-	// Initialize the BundleServiceServer to get the TxBundlePool
 	return &BundleMergerServer{
-		eth:     ethInstance,
-		profapi: bv.NewBlockValidationAPI(ethInstance, nil, true, true),
-		pool:    bundleService.txBundlePool, // Assign the pool from BundleServiceServer
+		eth:                 ethInstance,
+		profapi:             bv.NewBlockValidationAPI(ethInstance, nil, true, true),
+		pool:                bundleService.txBundlePool,
+		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
 	}
 }
 
@@ -93,7 +93,19 @@ func (s *BundleMergerServer) EnrichBlock(stream pb.BundleMerger_EnrichBlockServe
 		}
 
 		enrichedPayload := profValidationResp.ExecutionPayload
-		// TODO: save the execution payload.
+		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)
+		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
+
+		// Save the enriched payload in the pool
+		enrichedPayloadData := &EnrichedPayload{
+			UUID: req.Uuid,
+			Payload: &pb.ExecutionPayloadAndBlobsBundle{
+				ExecutionPayload: enrichedPayloadProto,
+				BlobsBundle:      enrichedBlobProto,
+			},
+			ReceivedAt: time.Now(),
+		}
+		s.enrichedPayloadPool.Add(enrichedPayloadData)
 
 		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
 			&builderApi.VersionedExecutionPayload{ //nolint:exhaustivestruct
@@ -145,34 +157,26 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 	return profBundles, nil
 }
 
-// GetEnrichedPayload implements the GetEnrichedPayload RPC method
+// TODO - Once payload is fetched, there is yet no marking for deletion --> To be added
 func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *pb.GetEnrichedPayloadRequest) (*pb.ExecutionPayloadAndBlobsBundle, error) {
-	// TODO: Implement the logic to get the enriched payload
-	// This logic is currently situated in eth/block-validation
-	// For now, we'll return a placeholder response
+	// Extract the UUID from the request message
+	uuid := string(req.Message)
 
-	// Simulating a case where the payload is not found
-	return &pb.ExecutionPayloadAndBlobsBundle{
-		ExecutionPayload: &pb.ExecutionPayloadUncompressed{},
-		BlobsBundle:      &pb.BlobsBundle{},
-	}, nil
+	// Retrieve the enriched payload from the pool
+	enrichedPayload, exists := s.enrichedPayloadPool.Get(uuid)
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "Enriched payload not found for UUID: %s", uuid)
+	}
 
-	// Uncomment and modify the following to return an actual payload
-	/*
-		return &pb.GetEnrichedPayloadResponse{
-			Uuid: req.Uuid,
-			PayloadOrEmpty: &pb.GetEnrichedPayloadResponse_PayloadBundle{
-				PayloadBundle: &pb.ExecutionPayloadAndBlobsBundle{
-					ExecutionPayload: &pb.ExecutionPayload{},
-					BlobsBundle:      &pb.BlobsBundle{},
-				},
-			},
-		}, nil
-	*/
+	// Create and return the response
+	response := &pb.ExecutionPayloadAndBlobsBundle{
+		ExecutionPayload: enrichedPayload.Payload.ExecutionPayload,
+		BlobsBundle:      enrichedPayload.Payload.BlobsBundle,
+	}
+	return response, nil
 }
 
-////Sequencer API
-
+// //Sequencer API
 type BundleServiceServer struct {
 	pb.UnimplementedBundleServiceServer
 	txBundlePool *TxBundlePool

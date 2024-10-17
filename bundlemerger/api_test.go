@@ -121,13 +121,6 @@ func TestEnrichBlock(t *testing.T) {
 	cc, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
 	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
 
-	// cc2, _ := types.SignTx(types.NewContractCreation(nonce+2, new(big.Int), 10000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-	// ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
-
-	// baseFee := eip1559.CalcBaseFee(params.AllEthashProtocolChanges, parent)
-	// tx2, _ := types.SignTx(types.NewTransaction(nonce+3, testAddr, big.NewInt(10), 21000, baseFee, nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
-	// ethservice.TxPool().Add([]*types.Transaction{tx2}, true, true, false)
-
 	// Calculate total gas consumed by tx1 and tx2
 	totalGas := tx1.Gas() + cc.Gas()
 	fmt.Printf("Total gas consumed by tx1, cc, cc2 and tx2: %d\n", totalGas)
@@ -333,4 +326,193 @@ func assembleBlock(api *BundleMergerServer, parentHash common.Hash, params *engi
 	}
 
 	return nil, errors.New("payload did not resolve")
+}
+
+func TestGetEnrichedPayload(t *testing.T) {
+	// Set up a simulated backend (reuse the setup from TestEnrichBlock)
+	genesis, blocks := generateMergeChain(10, true)
+	cancunTime := blocks[len(blocks)-1].Time() + 5
+	genesis.Config.ShanghaiTime = &cancunTime
+	genesis.Config.CancunTime = &cancunTime
+	os.Setenv("BUILDER_TX_SIGNING_KEY", testBuilderKeyHex)
+
+	n, ethservice := startEthService(t, genesis, blocks)
+	ethservice.Merger().ReachTTD()
+	defer n.Close()
+
+	bundleService := NewBundleServiceServer()
+	server := NewBundleMergerServerEth(ethservice, bundleService)
+
+	// Set up a buffer connection for gRPC
+	lis := bufconn.Listen(1024 * 1024)
+	s := grpc.NewServer()
+	pb.RegisterBundleMergerServer(s, server)
+	go func() {
+		if err := s.Serve(lis); err != nil {
+			t.Errorf("Server exited with error: %v", err)
+		}
+	}()
+
+	// Set up a client connection to the server
+	ctx := context.Background()
+	conn, err := grpc.DialContext(
+		context.Background(),
+		"bufnet",
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return lis.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	client := pb.NewBundleMergerClient(conn)
+
+	// Enrich a block first
+	enrichBlockStream, err := client.EnrichBlock(ctx)
+	require.NoError(t, err)
+
+	// Create a sample EnrichBlockRequest
+	parent := ethservice.BlockChain().CurrentHeader()
+
+	server.eth.APIBackend.Miner().SetEtherbase(testBuilderAddr)
+
+	statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
+	nonce := statedb.GetNonce(testAddr)
+
+	tx1, _ := types.SignTx(types.NewTransaction(nonce, common.Address{0x16}, big.NewInt(10), 21000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	ethservice.TxPool().Add([]*types.Transaction{tx1}, true, true, false)
+
+	cc, _ := types.SignTx(types.NewContractCreation(nonce+1, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	ethservice.TxPool().Add([]*types.Transaction{cc}, true, true, false)
+
+	// Calculate total gas consumed by tx1 and cc
+	totalGas := tx1.Gas() + cc.Gas()
+	fmt.Printf("Total gas consumed by tx1 and cc: %d\n", totalGas)
+
+	withdrawals := []*types.Withdrawal{
+		{
+			Index:     0,
+			Validator: 1,
+			Amount:    100,
+			Address:   testAddr,
+		},
+		{
+			Index:     1,
+			Validator: 1,
+			Amount:    100,
+			Address:   testAddr,
+		},
+	}
+
+	execData, err := assembleBlock(server, parent.Hash(), &engine.PayloadAttributes{
+		Timestamp:             parent.Time + 5,
+		Withdrawals:           withdrawals,
+		SuggestedFeeRecipient: testValidatorAddr,
+		BeaconRoot:            &common.Hash{42},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, len(execData.Withdrawals), 2)
+	require.EqualValues(t, len(execData.Transactions), 3)
+
+	payload, err := utils.ExecutableDataToExecutionPayloadV3(execData)
+	require.NoError(t, err)
+
+	proposerAddr := bellatrix.ExecutionAddress{}
+	copy(proposerAddr[:], testValidatorAddr.Bytes())
+
+	denebRequest := &utils.DenebEnrichBlockRequest{
+		Uuid: "test-uuid",
+		PayloadBundle: &builderApiDeneb.ExecutionPayloadAndBlobsBundle{
+			ExecutionPayload: payload,
+			BlobsBundle: &builderApiDeneb.BlobsBundle{
+				Commitments: make([]deneb.KZGCommitment, 0),
+				Proofs:      make([]deneb.KZGProof, 0),
+				Blobs:       make([]deneb.Blob, 0),
+			},
+		},
+		BidTrace: &builderApiV1.BidTrace{ // Use BidTrace instead of ProfBundle
+			ParentHash:           phase0.Hash32(execData.ParentHash),
+			BlockHash:            phase0.Hash32(execData.BlockHash),
+			ProposerFeeRecipient: proposerAddr,
+			GasLimit:             execData.GasLimit,
+			GasUsed:              execData.GasUsed,
+			// This value is actual profit + 1, validation should fail
+			Value: uint256.NewInt(132912184722469),
+		},
+		ParentBeaconBlockRoot: common.Hash{42},
+	}
+
+	// Convert to gRPC compatible request
+	protoRequest, err := utils.DenebRequestToProtoRequest(denebRequest)
+	require.NoError(t, err)
+
+	req := protoRequest
+
+	// Filling transactions into the PROF pool
+	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, common.Address{0x16}, big.NewInt(10), 21000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+	ethservice.TxPool().Add([]*types.Transaction{tx2}, true, true, false)
+
+	cc2, _ := types.SignTx(types.NewContractCreation(nonce+3, new(big.Int), 1000000, big.NewInt(2*params.InitialBaseFee), logCode), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
+
+	// Add a bundle to the pool
+	bundle := &TxBundle{
+		BlockNumber: "0x" + strconv.FormatUint(parent.Number.Uint64()+1, 16),
+		Txs:         []*types.Transaction{tx2, cc2},
+	}
+	err = server.pool.addBundle(bundle, true)
+	require.NoError(t, err)
+
+	// Measure time for sending and receiving
+	start := time.Now()
+
+	// Send the request
+	err = enrichBlockStream.Send(req)
+	require.NoError(t, err)
+
+	// Receive the response
+	resp, err := enrichBlockStream.Recv()
+
+	// Calculate elapsed time
+	elapsed := time.Since(start)
+
+	// Print the response and elapsed time
+	fmt.Printf("Enrich Block Response: %+v\n", resp)
+	fmt.Printf("Time taken for EnrichBlock: %v\n", elapsed)
+	require.NoError(t, err)
+
+	// Verify the EnrichBlock response
+	require.Equal(t, req.Uuid, resp.Uuid)
+	require.NotEmpty(t, resp.ExecutionPayloadHeader)
+	require.NotEmpty(t, resp.Value)
+
+	// Close the enrich block stream
+	err = enrichBlockStream.CloseSend()
+	require.NoError(t, err)
+
+	// Allow some time for the server to process the enriched payload
+	time.Sleep(500 * time.Millisecond)
+
+	// After enriching the block, get the enriched payload
+	getEnrichedPayloadReq := &pb.GetEnrichedPayloadRequest{
+		Message: []byte(req.Uuid),
+		// TODO - Add signature - verificaiton still to be added in utils and api
+		Signature: []byte{},
+	}
+
+	enrichedPayloadResp, err := client.GetEnrichedPayload(ctx, getEnrichedPayloadReq)
+	require.NoError(t, err)
+
+	fmt.Printf("Enriched Payload Response: %+v\n", enrichedPayloadResp)
+
+	// Verify the retrieved enriched payload
+	require.NotNil(t, enrichedPayloadResp)
+
+	// ToDo - Add more sanity checks for the returned Payload
+	// require.Equal(t, common.BytesToHash(enrichedPayload.BlockHash[:]), common.BytesToHash(enrichedPayloadResp.ExecutionPayload.BlockHash))
+	// require.Equal(t, enrichedPayload.Header, enrichedPayloadResp.ExecutionPayload.Header)
+	// require.Equal(t, enrichedPayload.Value, enrichedPayloadResp.ExecutionPayload.Value)
+	// require.Equal(t, enrichedPayload.GasUsed, enrichedPayloadResp.ExecutionPayload.GasUsed)
+	// require.Equal(t, enrichedPayload.GasLimit, enrichedPayloadResp.ExecutionPayload.GasLimit)
+	// require.Equal(t, enrichedPayload.Timestamp, enrichedPayloadResp.ExecutionPayload.Timestamp)
 }

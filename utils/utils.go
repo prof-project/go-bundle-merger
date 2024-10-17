@@ -299,3 +299,44 @@ func byteSliceToUint256Int(b []byte) *uint256.Int {
 	u256, _ := uint256.FromBig(new(big.Int).SetBytes(b))
 	return u256
 }
+
+func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *profpb.ExecutionPayloadUncompressed {
+	transactions := make([]*profpb.Transaction, len(payload.Transactions))
+	for i, tx := range payload.Transactions {
+		transactions[i] = &profpb.Transaction{
+			RawData: tx,
+		}
+	}
+
+	withdrawals := make([]*profpb.Withdrawal, len(payload.Withdrawals))
+	for i, withdrawal := range payload.Withdrawals {
+		withdrawals[i] = &profpb.Withdrawal{
+			ValidatorIndex: uint64(withdrawal.ValidatorIndex),
+			Index:          uint64(withdrawal.Index),
+			Amount:         uint64(withdrawal.Amount),
+			Address:        withdrawal.Address[:],
+		}
+	}
+
+	protoPayload := &profpb.ExecutionPayloadUncompressed{
+		ParentHash:    payload.ParentHash[:],
+		FeeRecipient:  payload.FeeRecipient[:],
+		StateRoot:     payload.StateRoot[:],
+		ReceiptsRoot:  payload.ReceiptsRoot[:],
+		LogsBloom:     payload.LogsBloom[:],
+		PrevRandao:    payload.PrevRandao[:],
+		BlockNumber:   payload.BlockNumber,
+		GasLimit:      payload.GasLimit,
+		GasUsed:       payload.GasUsed,
+		Timestamp:     payload.Timestamp,
+		ExtraData:     payload.ExtraData,
+		BaseFeePerGas: uint256ToIntToByteSlice(payload.BaseFeePerGas),
+		BlockHash:     payload.BlockHash[:],
+		Transactions:  transactions,
+		Withdrawals:   withdrawals,
+		BlobGasUsed:   payload.BlobGasUsed,
+		ExcessBlobGas: payload.ExcessBlobGas,
+	}
+
+	return protoPayload
+}
