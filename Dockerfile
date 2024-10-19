@@ -38,5 +38,8 @@ FROM alpine:latest
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
 
+# Copy the configuration file
+COPY cmd/server/config.yaml /config.yaml
+
 # Set the entry point to run the server
 CMD ["/enclave-server"]

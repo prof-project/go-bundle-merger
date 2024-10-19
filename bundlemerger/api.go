@@ -3,6 +3,7 @@ package bundlemerger
 import (
 	"context"
 	"fmt"
+	"github.com/ethereum/go-ethereum/rpc"
 	"io"
 	"log"
 	"math/big"
@@ -30,6 +31,7 @@ type BundleMergerServer struct {
 	profapi             *bv.BlockValidationAPI
 	pool                *TxBundlePool
 	enrichedPayloadPool *EnrichedPayloadPool
+	execClient          *rpc.Client
 }
 
 func NewBundleMergerServerEth(ethInstance *eth.Ethereum, bundleService *BundleServiceServer) *BundleMergerServer {
@@ -38,12 +40,13 @@ func NewBundleMergerServerEth(ethInstance *eth.Ethereum, bundleService *BundleSe
 		profapi:             bv.NewBlockValidationAPI(ethInstance, nil, true, true),
 		pool:                bundleService.txBundlePool,
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
+		execClient:          nil,
 	}
 }
 
 // NewBundleMergerServer creates a new BundleMergerServer
-func NewBundleMergerServer() *BundleMergerServer {
-	return &BundleMergerServer{}
+func NewBundleMergerServer(execClient *rpc.Client) *BundleMergerServer {
+	return &BundleMergerServer{execClient: execClient}
 }
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC

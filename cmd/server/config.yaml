@@ -1,0 +1,7 @@
+consensus-layer:
+  url: "http://127.0.0.1"
+  port: 33000
+
+execution-layer:
+  url: "http://127.0.0.1"
+  port: 32000
