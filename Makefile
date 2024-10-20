@@ -14,7 +14,7 @@ docker-build:
 	./build.sh
 
 docker-run:
-	docker run --rm -it -p 50051:50051 --name go-bundle-merger-container bundle_merger
+	docker run --rm -it -p 50051:50051 --name prof-merger-container prof-project/prof-merger
 
 profenv-start:
 	$(MAKE) -C test/ _profenv-start

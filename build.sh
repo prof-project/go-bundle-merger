@@ -16,5 +16,5 @@ if [ -z "$GITHUB_TOKEN" ]; then
 fi
 
 # Build the Docker image
-docker build --build-arg GITHUB_TOKEN="$GITHUB_TOKEN" -t bundle_merger .
+docker build --build-arg GITHUB_TOKEN="$GITHUB_TOKEN" -t prof-project/prof-merger .
 
