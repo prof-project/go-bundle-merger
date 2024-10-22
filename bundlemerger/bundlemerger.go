@@ -8,12 +8,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/rpc"
 
-	"github.com/ethereum/go-ethereum/common"
-
 	builderApi "github.com/attestantio/go-builder-client/api"
 	"github.com/attestantio/go-eth2-client/spec"
 	"github.com/ethereum/go-ethereum/beacon/engine"
-	"github.com/ethereum/go-ethereum/eth"
 	bv "github.com/ethereum/go-ethereum/eth/block-validation"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
 	"github.com/prof-project/go-bundle-merger/utils"
@@ -22,29 +19,25 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type BundleMergerServerOpts struct {
+	BundleService *BundleServiceServer
+	ExecClient    *rpc.Client
+}
+
 // BundleMergerServer implements the BundleMerger gRPC service
 type BundleMergerServer struct {
 	relay_grpc.UnimplementedEnricherServer
-	eth                 *eth.Ethereum
-	profapi             *bv.BlockValidationAPI
 	pool                *TxBundlePool
 	enrichedPayloadPool *EnrichedPayloadPool
 	execClient          *rpc.Client
 }
 
-func NewBundleMergerServerEth(ethInstance *eth.Ethereum, bundleService *BundleServiceServer) *BundleMergerServer {
+func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
 	return &BundleMergerServer{
-		eth:                 ethInstance,
-		profapi:             bv.NewBlockValidationAPI(ethInstance, nil, true, true),
-		pool:                bundleService.txBundlePool,
+		pool:                opts.BundleService.txBundlePool,
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
-		execClient:          nil,
+		execClient:          opts.ExecClient,
 	}
-}
-
-// NewBundleMergerServer creates a new BundleMergerServer
-func NewBundleMergerServer(execClient *rpc.Client) *BundleMergerServer {
-	return &BundleMergerServer{execClient: execClient}
 }
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
@@ -90,10 +83,24 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		fmt.Printf("PROF block before execution %+v\n", block)
 
-		profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
-		if err != nil {
-			return err
+		params := []interface{}{
+			block,
+			denebRequest.BidTrace.ProposerFeeRecipient,
+			uint64(0), // TODO: Set a suitable gas limit
 		}
+
+		var profValidationResp *bv.ProfSimResp
+		err = s.execClient.CallContext(context.Background(), &profValidationResp, "engine_validateProfBlock", params...)
+		if err != nil {
+			return status.Errorf(codes.Internal, "Error calling engine_validateProfBlock: %v", err)
+		}
+
+		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
+		// if err != nil {
+		// 	return err
+		// }
+
+		fmt.Printf("profValidationResp %+v\n", profValidationResp)
 
 		enrichedPayload := profValidationResp.ExecutionPayload
 		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)

@@ -13,8 +13,9 @@ run:
 docker-build:
 	./build.sh
 
+# TODO: Add support for other environments, currently configured for kurtosis
 docker-run:
-	docker run --rm -it -p 50051:50051 --name prof-merger-container prof-project/prof-merger
+	docker run --rm -it -e ENVIRONMENT=kurtosis -p 50051:50051 --name prof-merger-container prof-project/prof-merger
 
 profenv-start:
 	$(MAKE) -C test/ _profenv-start
