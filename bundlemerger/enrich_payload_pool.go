@@ -4,12 +4,12 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/prof-project/prof-grpc/go/profpb"
+	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 )
 
 type EnrichedPayload struct {
 	UUID              string
-	Payload           *pb.ExecutionPayloadAndBlobsBundle
+	Payload           *relay_grpc.ExecutionPayloadAndBlobsBundle
 	ReceivedAt        time.Time
 	MarkedForDeletion bool
 }

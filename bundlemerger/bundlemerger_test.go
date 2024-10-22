@@ -33,7 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/prof-project/go-bundle-merger/utils"
-	pb "github.com/prof-project/prof-grpc/go/profpb"
+	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -81,7 +81,7 @@ func TestEnrichBlock(t *testing.T) {
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	pb.RegisterBundleMergerServer(s, server)
+	relay_grpc.RegisterEnricherServer(s, server)
 	go func() {
 		if err := s.Serve(lis); err != nil {
 			t.Errorf("Server exited with error: %v", err)
@@ -101,10 +101,10 @@ func TestEnrichBlock(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	client := pb.NewBundleMergerClient(conn)
+	client := relay_grpc.NewEnricherClient(conn)
 
 	// Start the EnrichBlock stream
-	stream, err := client.EnrichBlock(ctx)
+	stream, err := client.EnrichBlockStream(ctx)
 	require.NoError(t, err)
 
 	// Create a sample EnrichBlockRequest
@@ -179,10 +179,14 @@ func TestEnrichBlock(t *testing.T) {
 	}
 
 	// Convert to gRPC compatible request
-	protoRequest, err := utils.DenebRequestToProtoRequest(denebRequest)
-	require.NoError(t, err)
+	protoRequest := utils.ExecutionPayloadToProtoEnrichBlockRequest(
+		denebRequest.Uuid,
+		denebRequest.PayloadBundle,
+		*denebRequest.BidTrace,
+		phase0.Root(denebRequest.ParentBeaconBlockRoot),
+	)
 
-	req := protoRequest
+	require.NoError(t, err)
 
 	// Filling transactions into the PROF pool
 	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, common.Address{0x16}, big.NewInt(10), 21000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
@@ -198,11 +202,13 @@ func TestEnrichBlock(t *testing.T) {
 	err = server.pool.addBundle(bundle, true)
 	require.NoError(t, err)
 
+	time.Sleep(100 * time.Millisecond)
+
 	// Measure time for sending and receiving
 	start := time.Now()
 
 	// Send the request
-	err = stream.Send(req)
+	err = stream.Send(&protoRequest)
 	require.NoError(t, err)
 
 	// Receive the response
@@ -217,7 +223,7 @@ func TestEnrichBlock(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the response
-	require.Equal(t, req.Uuid, resp.Uuid)
+	require.Equal(t, protoRequest.Uuid, resp.Uuid)
 
 	// TODO: check enriched header, only once it is implemented
 	require.NotEmpty(t, resp.ExecutionPayloadHeader)
@@ -346,7 +352,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
 	s := grpc.NewServer()
-	pb.RegisterBundleMergerServer(s, server)
+	relay_grpc.RegisterEnricherServer(s, server)
 	go func() {
 		if err := s.Serve(lis); err != nil {
 			t.Errorf("Server exited with error: %v", err)
@@ -366,10 +372,10 @@ func TestGetEnrichedPayload(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	client := pb.NewBundleMergerClient(conn)
+	client := relay_grpc.NewEnricherClient(conn)
 
 	// Enrich a block first
-	enrichBlockStream, err := client.EnrichBlock(ctx)
+	enrichBlockStream, err := client.EnrichBlockStream(ctx)
 	require.NoError(t, err)
 
 	// Create a sample EnrichBlockRequest
@@ -444,10 +450,15 @@ func TestGetEnrichedPayload(t *testing.T) {
 	}
 
 	// Convert to gRPC compatible request
-	protoRequest, err := utils.DenebRequestToProtoRequest(denebRequest)
-	require.NoError(t, err)
-
-	req := protoRequest
+	// protoRequest, err := utils.DenebRequestToProtoRequest(denebRequest)
+	// Convert to gRPC compatible request
+	// require.NoError(t, err)
+	protoRequest := utils.ExecutionPayloadToProtoEnrichBlockRequest(
+		denebRequest.Uuid,
+		denebRequest.PayloadBundle,
+		*denebRequest.BidTrace,
+		phase0.Root(denebRequest.ParentBeaconBlockRoot),
+	)
 
 	// Filling transactions into the PROF pool
 	tx2, _ := types.SignTx(types.NewTransaction(nonce+2, common.Address{0x16}, big.NewInt(10), 21000, big.NewInt(2*params.InitialBaseFee), nil), types.LatestSigner(ethservice.BlockChain().Config()), testKey)
@@ -467,7 +478,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 	start := time.Now()
 
 	// Send the request
-	err = enrichBlockStream.Send(req)
+	err = enrichBlockStream.Send(&protoRequest)
 	require.NoError(t, err)
 
 	// Receive the response
@@ -482,7 +493,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the EnrichBlock response
-	require.Equal(t, req.Uuid, resp.Uuid)
+	require.Equal(t, protoRequest.Uuid, resp.Uuid)
 	require.NotEmpty(t, resp.ExecutionPayloadHeader)
 	require.NotEmpty(t, resp.Value)
 
@@ -494,8 +505,8 @@ func TestGetEnrichedPayload(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// After enriching the block, get the enriched payload
-	getEnrichedPayloadReq := &pb.GetEnrichedPayloadRequest{
-		Message: []byte(req.Uuid),
+	getEnrichedPayloadReq := &relay_grpc.GetEnrichedPayloadRequest{
+		Message: []byte(protoRequest.Uuid),
 		// TODO - Add signature - verificaiton still to be added in utils and api
 		Signature: []byte{},
 	}

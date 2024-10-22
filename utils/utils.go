@@ -6,6 +6,7 @@ import (
 
 	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
 	builderApiV1 "github.com/attestantio/go-builder-client/api/v1"
+	v1 "github.com/attestantio/go-builder-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
 	"github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
@@ -15,8 +16,98 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
-	"github.com/prof-project/prof-grpc/go/profpb"
+	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 )
+
+func ExecutionPayloadToProtoEnrichBlockRequest(uuid string,
+	executionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle,
+	bidTrace v1.BidTrace, parentBeaconRoot phase0.Root) relay_grpc.EnrichBlockRequest {
+	BidTrace := &relay_grpc.BidTrace{
+		Slot:                 bidTrace.Slot,
+		ParentHash:           bidTrace.ParentHash[:],
+		BlockHash:            bidTrace.BlockHash[:],
+		BuilderPubkey:        bidTrace.BuilderPubkey[:],
+		ProposerPubkey:       bidTrace.ProposerPubkey[:],
+		ProposerFeeRecipient: bidTrace.ProposerFeeRecipient[:],
+		GasLimit:             bidTrace.GasLimit,
+		GasUsed:              bidTrace.GasUsed,
+		Value:                bidTrace.Value.Hex(),
+		BlobGasUsed:          executionPayload.ExecutionPayload.BlobGasUsed,
+		ExcessBlobGas:        executionPayload.ExecutionPayload.ExcessBlobGas,
+	}
+	execPayloadAndBlobsBundle := ExecutionPayloadToProtoExecutionPayloadAndBlobsBundle(executionPayload)
+	return relay_grpc.EnrichBlockRequest{
+		Uuid:                           uuid,
+		ExecutionPayloadAndBlobsBundle: execPayloadAndBlobsBundle,
+		BidTrace:                       BidTrace,
+		ParentBeaconRoot:               parentBeaconRoot[:],
+	}
+}
+
+func ExecutionPayloadToProtoExecutionPayloadAndBlobsBundle(executionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle) *relay_grpc.ExecutionPayloadAndBlobsBundle {
+	transactions := make([]*relay_grpc.Transaction, len(executionPayload.ExecutionPayload.Transactions))
+	for i, tx := range executionPayload.ExecutionPayload.Transactions {
+		transactions[i] = &relay_grpc.Transaction{
+			RawData: tx,
+		}
+	}
+	withdrawals := make([]*relay_grpc.Withdrawal, len(executionPayload.ExecutionPayload.Withdrawals))
+	for i, withdrawal := range executionPayload.ExecutionPayload.Withdrawals {
+		withdrawals[i] = &relay_grpc.Withdrawal{
+			ValidatorIndex: uint64(withdrawal.ValidatorIndex),
+			Index:          uint64(withdrawal.Index),
+			Amount:         uint64(withdrawal.Amount),
+			Address:        withdrawal.Address[:],
+		}
+	}
+	ExecutionPayloadUncompressed := &relay_grpc.ExecutionPayloadUncompressed{
+		ParentHash:    executionPayload.ExecutionPayload.ParentHash[:],
+		StateRoot:     executionPayload.ExecutionPayload.StateRoot[:],
+		ReceiptsRoot:  executionPayload.ExecutionPayload.ReceiptsRoot[:],
+		LogsBloom:     executionPayload.ExecutionPayload.LogsBloom[:],
+		PrevRandao:    executionPayload.ExecutionPayload.PrevRandao[:],
+		BaseFeePerGas: uint256ToIntToByteSlice(executionPayload.ExecutionPayload.BaseFeePerGas),
+		FeeRecipient:  executionPayload.ExecutionPayload.FeeRecipient[:],
+		BlockHash:     executionPayload.ExecutionPayload.BlockHash[:],
+		ExtraData:     executionPayload.ExecutionPayload.ExtraData,
+		BlockNumber:   executionPayload.ExecutionPayload.BlockNumber,
+		GasLimit:      executionPayload.ExecutionPayload.GasLimit,
+		Timestamp:     executionPayload.ExecutionPayload.Timestamp,
+		GasUsed:       executionPayload.ExecutionPayload.GasUsed,
+		Transactions:  transactions,
+		Withdrawals:   withdrawals,
+		BlobGasUsed:   executionPayload.ExecutionPayload.BlobGasUsed,
+		ExcessBlobGas: executionPayload.ExecutionPayload.ExcessBlobGas,
+	}
+	BlobsBundle := convertBlobBundleToProto(executionPayload.BlobsBundle)
+	return &relay_grpc.ExecutionPayloadAndBlobsBundle{
+		ExecutionPayload: ExecutionPayloadUncompressed,
+		BlobsBundle:      BlobsBundle,
+	}
+}
+
+// Add Commitments, Proofs, Data to BlobsBundle
+func convertBlobBundleToProto(blobBundle *builderApiDeneb.BlobsBundle) *relay_grpc.BlobsBundle {
+	protoBlobsBundle := &relay_grpc.BlobsBundle{
+		Commitments: make([][]byte, len(blobBundle.Commitments)),
+		Proofs:      make([][]byte, len(blobBundle.Proofs)),
+		Blobs:       make([][]byte, len(blobBundle.Blobs)),
+	}
+
+	for i := range blobBundle.Commitments {
+		protoBlobsBundle.Commitments[i] = blobBundle.Commitments[i][:]
+	}
+
+	for i := range blobBundle.Proofs {
+		protoBlobsBundle.Proofs[i] = blobBundle.Proofs[i][:]
+	}
+
+	for i := range blobBundle.Blobs {
+		protoBlobsBundle.Blobs[i] = blobBundle.Blobs[i][:]
+	}
+
+	return protoBlobsBundle
+}
 
 type DenebEnrichBlockRequest struct {
 	Uuid                  string
@@ -62,18 +153,18 @@ func ExecutableDataToExecutionPayloadV3(data *engine.ExecutableData) (*deneb.Exe
 	}, nil
 }
 
-// Converts a DenebEnrichBlockRequest to a profpb.EnrichBlockRequest.
-func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.EnrichBlockRequest, error) {
-	transactions := make([]*profpb.Transaction, len(request.PayloadBundle.ExecutionPayload.Transactions))
+// Converts a DenebEnrichBlockRequest to a relay_grpc.EnrichBlockRequest.
+func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*relay_grpc.EnrichBlockRequest, error) {
+	transactions := make([]*relay_grpc.Transaction, len(request.PayloadBundle.ExecutionPayload.Transactions))
 	for i, tx := range request.PayloadBundle.ExecutionPayload.Transactions {
-		transactions[i] = &profpb.Transaction{
+		transactions[i] = &relay_grpc.Transaction{
 			RawData: tx,
 		}
 	}
 
-	withdrawals := make([]*profpb.Withdrawal, len(request.PayloadBundle.ExecutionPayload.Withdrawals))
+	withdrawals := make([]*relay_grpc.Withdrawal, len(request.PayloadBundle.ExecutionPayload.Withdrawals))
 	for i, withdrawal := range request.PayloadBundle.ExecutionPayload.Withdrawals {
-		withdrawals[i] = &profpb.Withdrawal{
+		withdrawals[i] = &relay_grpc.Withdrawal{
 			ValidatorIndex: uint64(withdrawal.ValidatorIndex),
 			Index:          uint64(withdrawal.Index),
 			Amount:         uint64(withdrawal.Amount),
@@ -81,10 +172,10 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.Enric
 		}
 	}
 
-	return &profpb.EnrichBlockRequest{
+	return &relay_grpc.EnrichBlockRequest{
 		Uuid: request.Uuid,
-		ExecutionPayloadAndBlobsBundle: &profpb.ExecutionPayloadAndBlobsBundle{
-			ExecutionPayload: &profpb.ExecutionPayloadUncompressed{
+		ExecutionPayloadAndBlobsBundle: &relay_grpc.ExecutionPayloadAndBlobsBundle{
+			ExecutionPayload: &relay_grpc.ExecutionPayloadUncompressed{
 				ParentHash:    request.PayloadBundle.ExecutionPayload.ParentHash[:],
 				StateRoot:     request.PayloadBundle.ExecutionPayload.StateRoot[:],
 				ReceiptsRoot:  request.PayloadBundle.ExecutionPayload.ReceiptsRoot[:],
@@ -105,7 +196,7 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.Enric
 			},
 			BlobsBundle: DenebBlobsBundleToProtoBlobsBundle(request.PayloadBundle.BlobsBundle),
 		},
-		BidTrace: &profpb.BidTrace{
+		BidTrace: &relay_grpc.BidTrace{
 			Slot:                 request.BidTrace.Slot,
 			ParentHash:           request.BidTrace.ParentHash[:],
 			BlockHash:            request.BidTrace.BlockHash[:],
@@ -120,8 +211,8 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*profpb.Enric
 	}, nil
 }
 
-// Converts a profpb.EnrichBlockRequest to a DenebEnrichBlockRequest.
-func ProtoRequestToDenebRequest(request *profpb.EnrichBlockRequest) (*DenebEnrichBlockRequest, error) {
+// Converts a relay_grpc.EnrichBlockRequest to a DenebEnrichBlockRequest.
+func ProtoRequestToDenebRequest(request *relay_grpc.EnrichBlockRequest) (*DenebEnrichBlockRequest, error) {
 	transactions := make([]bellatrix.Transaction, len(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions))
 	for index, tx := range request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions {
 		transactions[index] = tx.RawData
@@ -200,8 +291,8 @@ func ProtoRequestToDenebRequest(request *profpb.EnrichBlockRequest) (*DenebEnric
 	}, nil
 }
 
-func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle) *profpb.BlobsBundle {
-	protoBlobsBundle := &profpb.BlobsBundle{
+func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle) *relay_grpc.BlobsBundle {
+	protoBlobsBundle := &relay_grpc.BlobsBundle{
 		Commitments: make([][]byte, len(blobBundle.Commitments)),
 		Proofs:      make([][]byte, len(blobBundle.Proofs)),
 		Blobs:       make([][]byte, len(blobBundle.Blobs)),
@@ -223,8 +314,8 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 }
 
 // TODO: implement
-func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *profpb.ExecutionPayloadHeader {
-	return &profpb.ExecutionPayloadHeader{}
+func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.ExecutionPayloadHeader {
+	return &relay_grpc.ExecutionPayloadHeader{}
 }
 
 // TODO: implement
@@ -300,17 +391,17 @@ func byteSliceToUint256Int(b []byte) *uint256.Int {
 	return u256
 }
 
-func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *profpb.ExecutionPayloadUncompressed {
-	transactions := make([]*profpb.Transaction, len(payload.Transactions))
+func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.ExecutionPayloadUncompressed {
+	transactions := make([]*relay_grpc.Transaction, len(payload.Transactions))
 	for i, tx := range payload.Transactions {
-		transactions[i] = &profpb.Transaction{
+		transactions[i] = &relay_grpc.Transaction{
 			RawData: tx,
 		}
 	}
 
-	withdrawals := make([]*profpb.Withdrawal, len(payload.Withdrawals))
+	withdrawals := make([]*relay_grpc.Withdrawal, len(payload.Withdrawals))
 	for i, withdrawal := range payload.Withdrawals {
-		withdrawals[i] = &profpb.Withdrawal{
+		withdrawals[i] = &relay_grpc.Withdrawal{
 			ValidatorIndex: uint64(withdrawal.ValidatorIndex),
 			Index:          uint64(withdrawal.Index),
 			Amount:         uint64(withdrawal.Amount),
@@ -318,7 +409,7 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *profpb.Executi
 		}
 	}
 
-	protoPayload := &profpb.ExecutionPayloadUncompressed{
+	protoPayload := &relay_grpc.ExecutionPayloadUncompressed{
 		ParentHash:    payload.ParentHash[:],
 		FeeRecipient:  payload.FeeRecipient[:],
 		StateRoot:     payload.StateRoot[:],

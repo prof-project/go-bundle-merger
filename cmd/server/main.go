@@ -1,17 +1,19 @@
 package main
 
 import (
+	"log"
+	"net"
+	"os"
+	"strconv"
+
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/goccy/go-yaml"
 	"github.com/prof-project/go-bundle-merger/bundlemerger"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
+	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"log"
-	"net"
-	"os"
-	"strconv"
 )
 
 const (
@@ -78,7 +80,7 @@ func main() {
 
 	// Create and register the BundleMergerServer
 	bundleMergerServer := bundlemerger.NewBundleMergerServer(execClient)
-	pb.RegisterBundleMergerServer(s, bundleMergerServer.UnimplementedBundleMergerServer)
+	relay_grpc.RegisterEnricherServer(s, bundleMergerServer.UnimplementedEnricherServer)
 
 	bundleServiceServer := bundlemerger.NewBundleServiceServer()
 	pb.RegisterBundleServiceServer(s, bundleServiceServer)

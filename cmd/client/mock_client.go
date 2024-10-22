@@ -31,8 +31,8 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/prof-project/go-bundle-merger/utils" 
-	pb "github.com/prof-project/prof-grpc/go/profpb" 
+	"github.com/prof-project/go-bundle-merger/utils"
+	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 	"google.golang.org/grpc"
 )
 
@@ -64,7 +64,7 @@ func main() {
 	}
 	defer conn.Close()
 
-	client := pb.NewBundleMergerClient(conn)
+	client := relay_grpc.NewEnricherClient(conn)
 
 	// Start the Ethereum service.
 	n, ethservice := startEthService()
@@ -75,7 +75,7 @@ func main() {
 	ctx := context.Background()
 
 	// Start the EnrichBlock stream.
-	stream, err := client.EnrichBlock(ctx)
+	stream, err := client.EnrichBlockStream(ctx)
 	if err != nil {
 		log.Fatalf("Failed to start EnrichBlock stream: %v", err)
 	}
