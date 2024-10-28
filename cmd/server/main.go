@@ -72,9 +72,9 @@ func main() {
 	}
 
 	bundleMergerServer := bundlemerger.NewBundleMergerServerEth(opts)
-	relay_grpc.RegisterEnricherServer(s, bundleMergerServer.UnimplementedEnricherServer)
+	relay_grpc.RegisterEnricherServer(s, bundleMergerServer)
 
-	log.Printf("Server listening on vsock port %d", port)
+	log.Printf("Server listening on port %d", port)
 	if err := s.Serve(listener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}
