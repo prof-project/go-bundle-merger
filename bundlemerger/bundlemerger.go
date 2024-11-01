@@ -78,6 +78,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		// Convert Deneb Request and Prof transactions to Block
 		block, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
 		if err != nil {
+			fmt.Printf("Error converting Deneb Request and Prof transactions to Block: %v\n", err)
 			return err
 		}
 
@@ -90,9 +91,9 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 
 		var profValidationResp *bv.ProfSimResp
-		err = s.execClient.CallContext(context.Background(), &profValidationResp, "engine_validateProfBlock", params...)
+		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
-			return status.Errorf(codes.Internal, "Error calling engine_validateProfBlock: %v", err)
+			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
 		}
 
 		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
