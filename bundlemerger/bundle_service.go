@@ -50,18 +50,17 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 
 		// Process each bundle in the collection
 		for i, bundle := range req.Bundles {
-			log.Printf(">> Processing bundle %d with %d transactions", i+1, len(bundle.Transactions))
-
-			// Log other bundle information
-			log.Printf("Bundle BlockNumber: %s, MinTimestamp: %d, MaxTimestamp: %d",
-				bundle.BlockNumber, bundle.MinTimestamp, bundle.MaxTimestamp)
-
-			if bundle.ReplacementUuid != "" {
-				log.Printf("ReplacementUuid: %s", bundle.ReplacementUuid)
-			}
-
-			// Optional fields
+			// Optional logging
 			if false {
+				log.Printf(">> Processing bundle %d with %d transactions", i+1, len(bundle.Transactions))
+
+				// Log other bundle information
+				log.Printf("Bundle BlockNumber: %s, MinTimestamp: %d, MaxTimestamp: %d",
+					bundle.BlockNumber, bundle.MinTimestamp, bundle.MaxTimestamp)
+
+				if bundle.ReplacementUuid != "" {
+					log.Printf("ReplacementUuid: %s", bundle.ReplacementUuid)
+				}
 				if len(bundle.RevertingTxHashes) > 0 {
 					log.Printf("RevertingTxHashes: %v", bundle.RevertingTxHashes)
 				}
@@ -82,16 +81,19 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 				Txs:               deserializeTransactions(bundle.Transactions),
 			}
 
-			// Log details of each transaction in the bundle
-			for j, tx := range bundle.Transactions {
-				log.Printf("(gRPC) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
-					j+1, tx.To, tx.Nonce, tx.Gas, tx.Value, tx.Data)
-			}
+			// Optional logging
+			if false {
+				// Log details of each transaction in the bundle
+				for j, tx := range bundle.Transactions {
+					log.Printf("(gRPC) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
+						j+1, tx.To, tx.Nonce, tx.Gas, tx.Value, tx.Data)
+				}
 
-			// Log details of deserialized transactions in the bundle
-			for j, tx := range txBundle.Txs {
-				log.Printf("(deserialized) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
-					j+1, tx.To(), tx.Nonce(), tx.Gas(), tx.Value(), tx.Data())
+				// Log details of deserialized transactions in the bundle
+				for j, tx := range txBundle.Txs {
+					log.Printf("(deserialized) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
+						j+1, tx.To(), tx.Nonce(), tx.Gas(), tx.Value(), tx.Data())
+				}
 			}
 
 			// Add the bundle to the pool
@@ -99,14 +101,17 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 			var statusMessage string
 			var success bool
 
-			if err != nil {
-				log.Printf("Error adding bundle %d to pool: %v", i+1, err)
-				statusMessage = fmt.Sprintf("Failed to add bundle to pool: %v", err)
-				success = false
-			} else {
-				log.Printf("Bundle %d added to pool successfully", i+1)
-				statusMessage = "Bundle added to pool successfully"
-				success = true
+			// Optional logging
+			if false {
+				if err != nil {
+					log.Printf("Error adding bundle %d to pool: %v", i+1, err)
+					statusMessage = fmt.Sprintf("Failed to add bundle to pool: %v", err)
+					success = false
+				} else {
+					log.Printf("Bundle %d added to pool successfully", i+1)
+					statusMessage = "Bundle added to pool successfully"
+					success = true
+				}
 			}
 
 			// Simulate some processing (e.g., interacting with miners or MEV searchers)
@@ -121,10 +126,11 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 				success = true
 			}
 
-			err = s.txBundlePool.cancelBundleByUuid(bundle.ReplacementUuid)
-			if err != nil {
-				// ToDo: Handle error
-			}
+			// ToDo: mark for deletion after merging
+			// err = s.txBundlePool.cancelBundleByUuid(bundle.ReplacementUuid)
+			// if err != nil {
+			// 	// ToDo: Handle error
+			// }
 
 			// Add response for the current bundle, including its UUID and processing result
 			bundleResponses = append(bundleResponses, &pb.BundleResponse{
@@ -165,9 +171,10 @@ func deserializeTransactions(serialized []*pb.BundleTransaction) []*types.Transa
 
 // Simulate some bundle processing, like communication with miners or other external services
 func simulateBundleProcessing(bundle *pb.Bundle) error {
-	log.Printf("Simulating processing of bundle for BlockNumber %s", bundle.BlockNumber)
-	time.Sleep(1 * time.Second)
-
+	// Optional logging
+	if false {
+		log.Printf("Simulating processing of bundle for BlockNumber %s", bundle.BlockNumber)
+	}
 	// Simulate a simple success case for now
 	return nil
 }

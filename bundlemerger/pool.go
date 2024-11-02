@@ -2,12 +2,13 @@ package bundlemerger
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/types"
 	"log"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 type TxBundle struct {
@@ -191,14 +192,17 @@ func (p *TxBundlePool) cleanupMarkedBundles() {
 	p.bundles = newBundles
 }
 
-func (p *TxBundlePool) getBundlesForProcessing(limit int) []*TxBundle {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+func (p *TxBundlePool) getBundlesForProcessing(limit int, markForDeletion bool) []*TxBundle {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	var selectedBundles []*TxBundle
 	for _, bundle := range p.bundles {
 		if !bundle.MarkedForDeletion {
 			selectedBundles = append(selectedBundles, bundle)
+			if markForDeletion {
+				bundle.MarkedForDeletion = true // Mark the bundle for deletion
+			}
 			if len(selectedBundles) >= limit {
 				break
 			}

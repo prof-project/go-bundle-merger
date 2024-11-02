@@ -1,11 +1,15 @@
 package bundlemerger
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	builderApi "github.com/attestantio/go-builder-client/api"
@@ -38,6 +42,15 @@ func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
 		execClient:          opts.ExecClient,
 	}
+}
+
+func serializeBlock(block *types.Block) (string, error) {
+	var buf bytes.Buffer
+	err := rlp.Encode(&buf, block)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf.Bytes()), nil
 }
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
@@ -84,10 +97,15 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		fmt.Printf("PROF block before execution %+v\n", block)
 
+		blockData, err := serializeBlock(block)
+		if err != nil {
+			return err
+		}
+
 		params := []interface{}{
-			block,
+			blockData,
 			denebRequest.BidTrace.ProposerFeeRecipient,
-			uint64(0), // TODO: Set a suitable gas limit
+			uint64(0), // Set a suitable gas limit
 		}
 
 		var profValidationResp *bv.ProfSimResp
@@ -142,11 +160,11 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 }
 
 func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
-	// TODO: Change limit, currently set to 1 for testing purposes
-	const bundleLimit = 1
+	// TODO: Change limit, currently set to 10 for testing purposes
+	const bundleLimit = 10
 
 	// Retrieve bundles from the pool
-	bundles := s.pool.getBundlesForProcessing(bundleLimit)
+	bundles := s.pool.getBundlesForProcessing(bundleLimit, true)
 
 	if len(bundles) == 0 {
 		return nil, fmt.Errorf("no bundles available for processing")
