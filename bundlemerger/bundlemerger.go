@@ -1,9 +1,7 @@
 package bundlemerger
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	bv "github.com/ethereum/go-ethereum/eth/block-validation"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
-	"github.com/flashbots/go-utils/jsonrpc"
 	"github.com/prof-project/go-bundle-merger/utils"
 	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 	"google.golang.org/grpc/codes"
@@ -109,31 +106,15 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		headers.Add("X-Fast-Track", "true")
 
 		// Create JSON-RPC request
-		jsonReq := jsonrpc.NewJSONRPCRequest("1", "flashbots_validateProfBlock", params)
-
-		// Create HTTP client
-		client := http.Client{
-			Timeout: 10 * time.Second, // Adjust timeout as needed
+		var result bv.ProfSimResp
+		err = s.execClient.Call(&result, "flashbots_validateProfBlock", params...)
+		if err != nil {
+			return status.Errorf(codes.Internal, "RPC call failed: %v", err)
 		}
 
-		// Send request
-		respData, requestErr, validationErr := SendJSONRPCRequest(&client, jsonReq, s.execClient.URL(), headers)
-		if requestErr != nil {
-			return status.Errorf(codes.Internal, "Request error: %v", requestErr)
-		}
-		if validationErr != nil {
-			return status.Errorf(codes.Internal, "Validation error: %v", validationErr)
-		}
+		fmt.Printf("profValidationResp %+v\n", result)
 
-		// Parse response
-		profValidationResp := new(bv.ProfSimResp)
-		if err := json.Unmarshal(respData.Result, profValidationResp); err != nil {
-			return status.Errorf(codes.Internal, "Failed to parse response: %v", err)
-		}
-
-		fmt.Printf("profValidationResp %+v\n", profValidationResp)
-
-		enrichedPayload := profValidationResp.ExecutionPayload
+		enrichedPayload := result.ExecutionPayload
 		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)
 		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
 
@@ -162,7 +143,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			Uuid:                   req.Uuid,
 			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb), // TODO: Check that this is implemented
 			KzgCommitment:          utils.CommitmentsToProtoCommitments(enrichedPayload.BlobsBundle.Commitments),
-			Value:                  profValidationResp.Value.Uint64(), // TODO: https://github.com/prof-project/prof-grpc/issues/2
+			Value:                  result.Value.Uint64(), // TODO: https://github.com/prof-project/prof-grpc/issues/2
 		}
 
 		if err := stream.Send(resp); err != nil {
@@ -215,47 +196,4 @@ func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_
 		BlobsBundle:      enrichedPayload.Payload.BlobsBundle,
 	}
 	return response, nil
-}
-
-// SendJSONRPCRequest sends the request to URL and returns the general JsonRpcResponse, or an error (note: not the JSONRPCError)
-func SendJSONRPCRequest(client *http.Client, req jsonrpc.JSONRPCRequest, url string, headers http.Header) (res *jsonrpc.JSONRPCResponse, requestErr, validationErr error) {
-	buf, err := json.Marshal(req)
-	if err != nil {
-		return nil, err, nil
-	}
-
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(buf))
-	if err != nil {
-		return nil, err, nil
-	}
-
-	// set request headers
-	httpReq.Header.Add("Content-Type", "application/json")
-	for k, v := range headers {
-		httpReq.Header.Add(k, v[0])
-	}
-
-	// execute request
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, err, nil
-	}
-	defer resp.Body.Close()
-
-	// read all resp bytes
-	rawResp, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read response bytes: %w", err), nil
-	}
-
-	// try json parsing
-	res = new(jsonrpc.JSONRPCResponse)
-	if err := json.NewDecoder(bytes.NewReader(rawResp)).Decode(res); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrJSONDecodeFailed, string(rawResp[:])), nil
-	}
-
-	if res.Error != nil {
-		return res, nil, fmt.Errorf("%w: %s", ErrSimulationFailed, res.Error.Message)
-	}
-	return res, nil, nil
 }
