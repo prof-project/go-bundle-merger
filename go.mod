@@ -7,7 +7,6 @@ require (
 	github.com/attestantio/go-eth2-client v0.21.11
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/flashbots/go-boost-utils v1.8.0
-	github.com/goccy/go-yaml v1.11.2
 	github.com/holiman/uint256 v1.3.1
 	github.com/prof-project/prof-grpc/go v0.0.0-20241022095900-3c301f161ba2
 	github.com/stretchr/testify v1.9.0
@@ -36,7 +35,7 @@ require (
 	github.com/crate-crypto/go-kzg-4844 v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/deckarep/golang-set/v2 v2.6.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.0 // indirect
 	github.com/fatih/color v1.16.0 // indirect
 	github.com/ferranbt/fastssz v0.1.3 // indirect
@@ -46,6 +45,7 @@ require (
 	github.com/gballet/go-verkle v0.1.1-0.20231031103413-a67434b50f46 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/goccy/go-yaml v1.11.2 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect

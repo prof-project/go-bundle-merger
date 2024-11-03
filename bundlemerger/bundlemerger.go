@@ -3,13 +3,13 @@ package bundlemerger
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
 	builderApi "github.com/attestantio/go-builder-client/api"
@@ -17,10 +17,18 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	bv "github.com/ethereum/go-ethereum/eth/block-validation"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
+	"github.com/flashbots/go-utils/jsonrpc"
 	"github.com/prof-project/go-bundle-merger/utils"
 	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+var (
+	ErrJSONDecodeFailed = errors.New("json error")
+	ErrSimulationFailed = errors.New("simulation failed")
+	ErrNoCapellaPayload = errors.New("capella payload is nil")
+	ErrNoDenebPayload   = errors.New("deneb payload is nil")
 )
 
 type BundleMergerServerOpts struct {
@@ -42,15 +50,6 @@ func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
 		execClient:          opts.ExecClient,
 	}
-}
-
-func serializeBlock(block *types.Block) (string, error) {
-	var buf bytes.Buffer
-	err := rlp.Encode(&buf, block)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf.Bytes()), nil
 }
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
@@ -97,27 +96,40 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		fmt.Printf("PROF block before execution %+v\n", block)
 
-		blockData, err := serializeBlock(block)
-		if err != nil {
-			return err
-		}
-
 		params := []interface{}{
-			blockData,
+			block,
 			denebRequest.BidTrace.ProposerFeeRecipient,
-			uint64(0), // Set a suitable gas limit
+			denebRequest.BidTrace.GasLimit,
 		}
 
-		var profValidationResp *bv.ProfSimResp
-		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
-		if err != nil {
-			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
+		// Create headers
+		headers := http.Header{}
+		headers.Add("X-Request-ID", fmt.Sprintf("%s", req.Uuid))
+		headers.Add("X-High-Priority", "true")
+		headers.Add("X-Fast-Track", "true")
+
+		// Create JSON-RPC request
+		jsonReq := jsonrpc.NewJSONRPCRequest("1", "flashbots_validateProfBlock", params)
+
+		// Create HTTP client
+		client := http.Client{
+			Timeout: 10 * time.Second, // Adjust timeout as needed
 		}
 
-		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
-		// if err != nil {
-		// 	return err
-		// }
+		// Send request
+		respData, requestErr, validationErr := SendJSONRPCRequest(&client, jsonReq, s.execClient.URL(), headers)
+		if requestErr != nil {
+			return status.Errorf(codes.Internal, "Request error: %v", requestErr)
+		}
+		if validationErr != nil {
+			return status.Errorf(codes.Internal, "Validation error: %v", validationErr)
+		}
+
+		// Parse response
+		profValidationResp := new(bv.ProfSimResp)
+		if err := json.Unmarshal(respData.Result, profValidationResp); err != nil {
+			return status.Errorf(codes.Internal, "Failed to parse response: %v", err)
+		}
 
 		fmt.Printf("profValidationResp %+v\n", profValidationResp)
 
@@ -203,4 +215,47 @@ func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_
 		BlobsBundle:      enrichedPayload.Payload.BlobsBundle,
 	}
 	return response, nil
+}
+
+// SendJSONRPCRequest sends the request to URL and returns the general JsonRpcResponse, or an error (note: not the JSONRPCError)
+func SendJSONRPCRequest(client *http.Client, req jsonrpc.JSONRPCRequest, url string, headers http.Header) (res *jsonrpc.JSONRPCResponse, requestErr, validationErr error) {
+	buf, err := json.Marshal(req)
+	if err != nil {
+		return nil, err, nil
+	}
+
+	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(buf))
+	if err != nil {
+		return nil, err, nil
+	}
+
+	// set request headers
+	httpReq.Header.Add("Content-Type", "application/json")
+	for k, v := range headers {
+		httpReq.Header.Add(k, v[0])
+	}
+
+	// execute request
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err, nil
+	}
+	defer resp.Body.Close()
+
+	// read all resp bytes
+	rawResp, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read response bytes: %w", err), nil
+	}
+
+	// try json parsing
+	res = new(jsonrpc.JSONRPCResponse)
+	if err := json.NewDecoder(bytes.NewReader(rawResp)).Decode(res); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrJSONDecodeFailed, string(rawResp[:])), nil
+	}
+
+	if res.Error != nil {
+		return res, nil, fmt.Errorf("%w: %s", ErrSimulationFailed, res.Error.Message)
+	}
+	return res, nil, nil
 }
