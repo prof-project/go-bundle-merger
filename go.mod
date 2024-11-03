@@ -7,7 +7,6 @@ require (
 	github.com/attestantio/go-eth2-client v0.21.11
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/flashbots/go-boost-utils v1.8.0
-	github.com/flashbots/go-utils v0.8.0
 	github.com/holiman/uint256 v1.3.1
 	github.com/prof-project/prof-grpc/go v0.0.0-20241022095900-3c301f161ba2
 	github.com/stretchr/testify v1.9.0
