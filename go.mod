@@ -7,9 +7,8 @@ require (
 	github.com/attestantio/go-eth2-client v0.21.11
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/flashbots/go-boost-utils v1.8.0
-	github.com/goccy/go-yaml v1.11.2
 	github.com/holiman/uint256 v1.3.1
-	github.com/prof-project/prof-grpc/go v0.0.0-20241022095900-3c301f161ba2
+	github.com/prof-project/prof-grpc/go v0.0.0-00010101000000-000000000000
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/net v0.28.0
 	google.golang.org/grpc v1.67.1
@@ -46,6 +45,7 @@ require (
 	github.com/gballet/go-verkle v0.1.1-0.20231031103413-a67434b50f46 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/goccy/go-yaml v1.11.2 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
@@ -109,3 +109,5 @@ require (
 )
 
 replace github.com/ethereum/go-ethereum => github.com/prof-project/builder v1.0.2
+
+replace github.com/prof-project/prof-grpc/go => ./lib/prof-grpc/go

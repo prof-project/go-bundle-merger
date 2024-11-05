@@ -8,20 +8,8 @@ RUN apk update && apk add --no-cache git
 # Set the working directory
 WORKDIR /app
 
-# Define build-time variable for GitHub token
-ARG GITHUB_TOKEN
-
-# Configure Git to use the token for GitHub URLs
-RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-
 # Copy go.mod and go.sum to leverage Docker cache
 COPY go.mod go.sum ./
-
-# Download Go modules
-RUN go mod download
-
-# Remove Git credentials to prevent them from being cached in image layers
-RUN git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Copy the rest of the application code
 COPY . .

@@ -210,8 +210,6 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/prof-project/builder v1.0.2 h1:TWS5YwbxRBOjVQpCF96B+HsJI55d5YcLeh6Sq8JCZ90=
 github.com/prof-project/builder v1.0.2/go.mod h1:+vKNWQDKUeY7PJD1FfxMcTP6pFUSEyeyoC2VcI2F150=
-github.com/prof-project/prof-grpc/go v0.0.0-20241022095900-3c301f161ba2 h1:H0YBxgNTGrfacwJyuur5FlC+iNPapSbaOCcMUQnhQGo=
-github.com/prof-project/prof-grpc/go v0.0.0-20241022095900-3c301f161ba2/go.mod h1:TB0lWwXcFMfF006o8+29Ks4vmsN0UgoRO35+O/LRWXc=
 github.com/prometheus/client_golang v1.16.0 h1:yk/hx9hDbrGHovbci4BY+pRMfSuuat626eFsHb7tmT8=
 github.com/prometheus/client_golang v1.16.0/go.mod h1:Zsulrv/L9oM40tJ7T815tM89lFEugiJ9HzIqaAx4LKc=
 github.com/prometheus/client_model v0.3.0 h1:UBgGFHqYdG/TPFD1B1ogZywDqEkwp3fBMvqdiQ7Xew4=

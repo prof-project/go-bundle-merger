@@ -11,7 +11,7 @@ run:
 	$(MAKE) -C cmd/ _run
 
 docker-build:
-	./build.sh
+	docker build -t prof-project/prof-merger .
 
 # TODO: Add support for other environments, currently configured for kurtosis
 docker-run:

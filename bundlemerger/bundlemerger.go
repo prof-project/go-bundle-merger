@@ -89,19 +89,17 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 
 		// Convert Deneb Request and Prof transactions to Block
-		block, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
+		profBlock, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
 		if err != nil {
 			fmt.Printf("Error converting Deneb Request and Prof transactions to Block: %v\n", err)
 			return err
 		}
+		fmt.Printf("PROF block before execution %+v\n", profBlock)
 
-		fmt.Printf("PROF block before execution %+v\n", block)
-
-		blockData, err := serializeBlock(block)
+		blockData, err := serializeBlock(profBlock)
 		if err != nil {
 			return err
 		}
-
 		params := []interface{}{
 			blockData,
 			denebRequest.BidTrace.ProposerFeeRecipient,

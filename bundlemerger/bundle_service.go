@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
 )
 
@@ -70,6 +69,14 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 				}
 			}
 
+			log.Printf("Processing bundle %d with %d transactions", i+1, len(bundle.Transactions))
+
+			// Optional logging
+			if false {
+				log.Printf("Bundle BlockNumber: %s, MinTimestamp: %d, MaxTimestamp: %d", bundle.BlockNumber, bundle.MinTimestamp, bundle.MaxTimestamp)
+				log.Printf("Bundle: %v", bundle)
+			}
+
 			// Convert the gRPC bundle to a TxBundle
 			txBundle := &TxBundle{
 				BlockNumber:       bundle.BlockNumber,
@@ -78,21 +85,57 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 				RevertingTxHashes: bundle.RevertingTxHashes,
 				ReplacementUuid:   bundle.ReplacementUuid,
 				Builders:          bundle.Builders,
-				Txs:               deserializeTransactions(bundle.Transactions),
+			}
+
+			// Deserialize transactions from the gRPC bundle
+			txBundle.Txs, err = deserializeTransactions(bundle.Transactions)
+			if err != nil {
+				log.Printf("Failed to deserialize transactions: %v\n", err)
+				return err
 			}
 
 			// Optional logging
-			if false {
-				// Log details of each transaction in the bundle
-				for j, tx := range bundle.Transactions {
-					log.Printf("(gRPC) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
-						j+1, tx.To, tx.Nonce, tx.Gas, tx.Value, tx.Data)
+			if true {
+				// Optional logging
+				if false {
+					// Log details of each transaction in the bundle
+					for j, tx := range bundle.Transactions {
+						log.Printf("(gRPC) Transaction %d: Data: %x", j+1, tx.Data)
+					}
 				}
 
-				// Log details of deserialized transactions in the bundle
-				for j, tx := range txBundle.Txs {
-					log.Printf("(deserialized) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v",
-						j+1, tx.To(), tx.Nonce(), tx.Gas(), tx.Value(), tx.Data())
+				// Optional logging
+				if false {
+					// Log details of deserialized transactions in the bundle
+					for j, tx := range txBundle.Txs {
+						log.Printf("(deserialized) Transaction %d: To: %s, Nonce: %d, Gas: %d, Value: %s, Data: %v, Hash: %s, Size: %d", j+1, tx.To(), tx.Nonce(), tx.Gas(), tx.Value(), tx.Data(), tx.Hash(), tx.Size())
+
+						// Derive the sender address based on the transaction type
+						var signer types.Signer
+						switch tx.Type() {
+						case types.LegacyTxType:
+							signer = types.HomesteadSigner{}
+						case types.AccessListTxType:
+							signer = types.NewEIP2930Signer(tx.ChainId())
+						case types.DynamicFeeTxType:
+							signer = types.NewLondonSigner(tx.ChainId())
+						default:
+							log.Printf("Unsupported transaction type: %d\n", tx.Type())
+							continue
+						}
+
+						from, err := types.Sender(signer, tx)
+						if err != nil {
+							log.Printf("Failed to derive sender address: %v\n", err)
+							continue
+						}
+						// Get the signature values
+						v, r, s := tx.RawSignatureValues()
+
+						log.Printf("Transaction details: %+v\n", tx)
+						log.Printf("Sender address: %s\n", from.Hex())
+						log.Printf("Signature values: v=%d, r=%x, s=%x\n", v, r, s)
+					}
 				}
 			}
 
@@ -150,23 +193,19 @@ func (s *BundleServiceServer) StreamBundleCollections(stream pb.BundleService_St
 	}
 }
 
-func deserializeTransactions(serialized []*pb.BundleTransaction) []*types.Transaction {
+// deserializeTransactions takes a slice of BundleTransaction objects and returns a slice of Transaction objects
+func deserializeTransactions(bundleTxs []*pb.BundleTransaction) ([]*types.Transaction, error) {
 	var transactions []*types.Transaction
-	for _, stx := range serialized {
-		to := common.HexToAddress(stx.To)
-		value, _ := new(big.Int).SetString(stx.Value, 10) // Convert string to big.Int
-
-		tx := types.NewTransaction(
-			stx.Nonce,
-			to,
-			value,
-			stx.Gas,
-			nil, // ToDo: GasPrice, not part of gRPC message for now
-			stx.Data,
-		)
+	for _, bundleTx := range bundleTxs {
+		tx := new(types.Transaction)
+		err := rlp.DecodeBytes(bundleTx.Data, tx)
+		if err != nil {
+			log.Printf("Failed to deserialize transaction: %v\n", err)
+			return nil, err
+		}
 		transactions = append(transactions, tx)
 	}
-	return transactions
+	return transactions, nil
 }
 
 // Simulate some bundle processing, like communication with miners or other external services

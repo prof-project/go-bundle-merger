@@ -1,0 +1,3 @@
+[submodule "lib/prof-grpc"]
+	path = lib/prof-grpc
+	url = https://github.com/prof-project/prof-grpc.git
