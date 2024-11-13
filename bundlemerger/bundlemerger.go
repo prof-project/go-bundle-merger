@@ -73,16 +73,9 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			return status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 		}
 
-		// Convert Deneb Request to Block
-		pbsBlock, err := engine.ExecutionPayloadV3ToBlock(denebRequest.PayloadBundle.ExecutionPayload, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
-		if err != nil {
-			return err
-		}
-
-		// Print Block to see that reconstruction from gRPC works
-		fmt.Printf("got ExecutionPayloadV3ToBlock %+v\n", pbsBlock)
-
 		profBundle, err := s.getProfBundle()
+
+		fmt.Printf("profBundle %+v\n", profBundle)
 
 		if err != nil {
 			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
@@ -100,15 +93,18 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		if err != nil {
 			return err
 		}
+
+		registeredGasLimit := profBlock.Header().GasLimit
 		params := []interface{}{
 			blockData,
 			denebRequest.BidTrace.ProposerFeeRecipient,
-			uint64(0), // Set a suitable gas limit
+			registeredGasLimit, 
 		}
 
 		var profValidationResp *bv.ProfSimResp
 		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
+			fmt.Printf("Error calling flashbots_validateProfBlock: %v\n", err)
 			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
 		}
 
@@ -163,6 +159,8 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 
 	// Retrieve bundles from the pool
 	bundles := s.pool.getBundlesForProcessing(bundleLimit, true)
+
+	fmt.Printf("bundles %+v\n", bundles)
 
 	if len(bundles) == 0 {
 		return nil, fmt.Errorf("no bundles available for processing")
