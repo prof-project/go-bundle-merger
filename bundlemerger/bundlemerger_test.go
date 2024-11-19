@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
 	"github.com/prof-project/go-bundle-merger/utils"
 	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
@@ -60,6 +61,10 @@ var (
 	logCode = common.Hex2Bytes("60606040525b7f24ec1d3ff24c2f6ff210738839dbc339cd45a5294d85c79361016243157aae7b60405180905060405180910390a15b600a8060416000396000f360606040526008565b00")
 )
 
+// TestEnrichBlock tests the EnrichBlock RPC method
+// NOTE
+// This assumes a running builder at 8545, as simulation is currently done via JSON-RPC
+// Hence, this test is not fully self-contained and will fail if the builder is not running, e.g. in Kurtosis
 func TestEnrichBlock(t *testing.T) {
 	// Set up a simulated backend
 	genesis, blocks := generateMergeChain(10, true)
@@ -74,9 +79,16 @@ func TestEnrichBlock(t *testing.T) {
 	ethservice.Merger().ReachTTD()
 	defer n.Close()
 
-	// Create a new BundleMergerServer
+	// Create RPC client for builder API
+	clientEth, err := rpc.Dial("http://localhost:8545")
+	require.NoError(t, err)
+
+	// Create a new BundleMergerServer with the required options
 	bundleService := NewBundleServiceServer()
-	server := NewBundleMergerServerEth(ethservice, bundleService)
+	server := NewBundleMergerServerEth(BundleMergerServerOpts{
+		BundleService: bundleService,
+		ExecClient:    clientEth,
+	})
 
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
@@ -110,7 +122,7 @@ func TestEnrichBlock(t *testing.T) {
 	// Create a sample EnrichBlockRequest
 	parent := ethservice.BlockChain().CurrentHeader()
 
-	server.eth.APIBackend.Miner().SetEtherbase(testBuilderAddr)
+	ethservice.Miner().SetEtherbase(testBuilderAddr)
 
 	statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
 	nonce := statedb.GetNonce(testAddr)
@@ -140,7 +152,7 @@ func TestEnrichBlock(t *testing.T) {
 		},
 	}
 
-	execData, err := assembleBlock(server, parent.Hash(), &engine.PayloadAttributes{
+	execData, err := assembleBlock(server, ethservice, parent.Hash(), &engine.PayloadAttributes{
 		Timestamp:             parent.Time + 5,
 		Withdrawals:           withdrawals,
 		SuggestedFeeRecipient: testValidatorAddr,
@@ -149,6 +161,13 @@ func TestEnrichBlock(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, len(execData.Withdrawals), 2)
 	require.EqualValues(t, len(execData.Transactions), 3)
+
+	// Add this: Wait for the block to be processed
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the parent block exists
+	block := ethservice.BlockChain().GetBlockByHash(parent.Hash())
+	require.NotNil(t, block, "Parent block not found in blockchain")
 
 	payload, err := utils.ExecutableDataToExecutionPayloadV3(execData)
 	require.NoError(t, err)
@@ -224,11 +243,9 @@ func TestEnrichBlock(t *testing.T) {
 
 	// Verify the response
 	require.Equal(t, protoRequest.Uuid, resp.Uuid)
-
-	// TODO: check enriched header, only once it is implemented
 	require.NotEmpty(t, resp.ExecutionPayloadHeader)
-	// require.NotEmpty(t, resp.KzgCommitment)
 	require.NotEmpty(t, resp.Value)
+	require.NotEmpty(t, resp.KzgCommitment)
 
 	// Close the stream
 	err = stream.CloseSend()
@@ -287,6 +304,27 @@ func startEthService(t *testing.T, genesis *core.Genesis, blocks []*types.Block)
 			NoDiscovery: true,
 			MaxPeers:    25,
 		},
+		HTTPHost: "127.0.0.1",
+		HTTPPort: 0,
+		HTTPModules: []string{
+			"eth",
+			"net",
+			"web3",
+			"builder",
+			"flashbots",
+		},
+		WSHost: "127.0.0.1",
+		WSPort: 0,
+		WSModules: []string{
+			"admin",
+			"engine",
+			"net",
+			"eth",
+			"web3",
+			"debug",
+			"mev",
+			"flashbots",
+		},
 	})
 	if err != nil {
 		t.Fatal("can't create node:", err)
@@ -297,21 +335,23 @@ func startEthService(t *testing.T, genesis *core.Genesis, blocks []*types.Block)
 	if err != nil {
 		t.Fatal("can't create eth service:", err)
 	}
+
 	if err := n.Start(); err != nil {
 		t.Fatal("can't start node:", err)
 	}
+
 	if _, err := ethservice.BlockChain().InsertChain(blocks); err != nil {
 		n.Close()
 		t.Fatal("can't import test blocks:", err)
 	}
-	time.Sleep(500 * time.Millisecond) // give txpool enough time to consume head event
 
+	time.Sleep(500 * time.Millisecond)
 	ethservice.SetEtherbase(testAddr)
 	ethservice.SetSynced()
 	return n, ethservice
 }
 
-func assembleBlock(api *BundleMergerServer, parentHash common.Hash, params *engine.PayloadAttributes) (*engine.ExecutableData, error) {
+func assembleBlock(api *BundleMergerServer, ethservice *eth.Ethereum, parentHash common.Hash, params *engine.PayloadAttributes) (*engine.ExecutableData, error) {
 	args := &miner.BuildPayloadArgs{
 		Parent:       parentHash,
 		Timestamp:    params.Timestamp,
@@ -322,7 +362,7 @@ func assembleBlock(api *BundleMergerServer, parentHash common.Hash, params *engi
 		BeaconRoot:   params.BeaconRoot,
 	}
 
-	payload, err := api.eth.Miner().BuildPayload(args)
+	payload, err := ethservice.Miner().BuildPayload(args)
 	if err != nil {
 		return nil, err
 	}
@@ -346,8 +386,15 @@ func TestGetEnrichedPayload(t *testing.T) {
 	ethservice.Merger().ReachTTD()
 	defer n.Close()
 
+	// Create RPC client for builder API
+	clientEth, err := rpc.Dial("http://localhost:8545")
+	require.NoError(t, err)
+
 	bundleService := NewBundleServiceServer()
-	server := NewBundleMergerServerEth(ethservice, bundleService)
+	server := NewBundleMergerServerEth(BundleMergerServerOpts{
+		BundleService: bundleService,
+		ExecClient:    clientEth,
+	})
 
 	// Set up a buffer connection for gRPC
 	lis := bufconn.Listen(1024 * 1024)
@@ -381,7 +428,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 	// Create a sample EnrichBlockRequest
 	parent := ethservice.BlockChain().CurrentHeader()
 
-	server.eth.APIBackend.Miner().SetEtherbase(testBuilderAddr)
+	ethservice.Miner().SetEtherbase(testBuilderAddr)
 
 	statedb, _ := ethservice.BlockChain().StateAt(parent.Root)
 	nonce := statedb.GetNonce(testAddr)
@@ -411,7 +458,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 		},
 	}
 
-	execData, err := assembleBlock(server, parent.Hash(), &engine.PayloadAttributes{
+	execData, err := assembleBlock(server, ethservice, parent.Hash(), &engine.PayloadAttributes{
 		Timestamp:             parent.Time + 5,
 		Withdrawals:           withdrawals,
 		SuggestedFeeRecipient: testValidatorAddr,
@@ -420,6 +467,13 @@ func TestGetEnrichedPayload(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, len(execData.Withdrawals), 2)
 	require.EqualValues(t, len(execData.Transactions), 3)
+
+	// Add this: Wait for the block to be processed
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the parent block exists
+	block := ethservice.BlockChain().GetBlockByHash(parent.Hash())
+	require.NotNil(t, block, "Parent block not found in blockchain")
 
 	payload, err := utils.ExecutableDataToExecutionPayloadV3(execData)
 	require.NoError(t, err)
