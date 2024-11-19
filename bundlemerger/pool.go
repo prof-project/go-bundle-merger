@@ -33,6 +33,11 @@ func (p *TxBundlePool) addBundle(bundle *TxBundle, replace bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// Add logging for transaction nonce
+	if len(bundle.Txs) > 0 {
+		log.Printf("Adding bundle with tx nonce: %d", bundle.Txs[0].Nonce())
+	}
+
 	// Check if a bundle with the same replacementUuid already exists
 	existingBundle, exists := p.bundleMap[bundle.ReplacementUuid]
 	if exists {
@@ -77,9 +82,9 @@ func (p *TxBundlePool) addBundle(bundle *TxBundle, replace bool) error {
 }
 
 func (p *TxBundlePool) sortPool() {
-	sort.Slice(p.bundles, func(i, j int) bool {
-		return p.customSort(p.bundles[i], p.bundles[j])
-	})
+    sort.SliceStable(p.bundles, func(i, j int) bool {
+        return p.customSort(p.bundles[i], p.bundles[j])
+    })
 }
 
 // // sorting policies
@@ -193,22 +198,25 @@ func (p *TxBundlePool) cleanupMarkedBundles() {
 }
 
 func (p *TxBundlePool) getBundlesForProcessing(limit int, markForDeletion bool) []*TxBundle {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+    p.mu.Lock()
+    defer p.mu.Unlock()
 
-	var selectedBundles []*TxBundle
-	for _, bundle := range p.bundles {
-		if !bundle.MarkedForDeletion {
-			selectedBundles = append(selectedBundles, bundle)
-			if markForDeletion {
-				bundle.MarkedForDeletion = true // Mark the bundle for deletion
-			}
-			if len(selectedBundles) >= limit {
-				break
-			}
-		}
-	}
-	return selectedBundles
+    var selectedBundles []*TxBundle
+    for _, bundle := range p.bundles {
+        if !bundle.MarkedForDeletion {
+            selectedBundles = append(selectedBundles, bundle)
+            if len(bundle.Txs) > 0 {
+                log.Printf("Selected bundle with nonce: %d", bundle.Txs[0].Nonce())
+            }
+            if markForDeletion {
+                bundle.MarkedForDeletion = true
+            }
+            if len(selectedBundles) >= limit {
+                break
+            }
+        }
+    }
+    return selectedBundles
 }
 
 func (p *TxBundlePool) startCleanupJob(interval time.Duration) {
