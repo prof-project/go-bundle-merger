@@ -315,12 +315,42 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 
 // TODO: implement
 func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.ExecutionPayloadHeader {
-	return &relay_grpc.ExecutionPayloadHeader{}
+	if header == nil {
+		return &relay_grpc.ExecutionPayloadHeader{}
+	}
+	
+	return &relay_grpc.ExecutionPayloadHeader{
+		ParentHash:       header.ParentHash[:],
+		FeeRecipient:    header.FeeRecipient[:],
+		StateRoot:       header.StateRoot[:],
+		ReceiptsRoot:    header.ReceiptsRoot[:],
+		LogsBloom:       header.LogsBloom[:],
+		PrevRandao:      header.PrevRandao[:],
+		BlockNumber:     header.BlockNumber,
+		GasLimit:        header.GasLimit,
+		GasUsed:         header.GasUsed,
+		Timestamp:       header.Timestamp,
+		ExtraData:       header.ExtraData,
+		BaseFeePerGas:   uint256ToIntToByteSlice(header.BaseFeePerGas),
+		BlockHash:       header.BlockHash[:],
+		TransactionsRoot: header.TransactionsRoot[:],
+		WithdrawalsRoot: header.WithdrawalsRoot[:],
+		BlobGasUsed:    header.BlobGasUsed,
+		ExcessBlobGas:  header.ExcessBlobGas,
+	}
 }
 
-// TODO: implement
+// Convert KZG commitments to proto format
 func CommitmentsToProtoCommitments(commitments []deneb.KZGCommitment) [][]byte {
-	return [][]byte{}
+	if len(commitments) == 0 {
+		return [][]byte{}
+	}
+
+	protoCommitments := make([][]byte, len(commitments))
+	for i, commitment := range commitments {
+		protoCommitments[i] = commitment[:]
+	}
+	return protoCommitments
 }
 
 // Helper functions

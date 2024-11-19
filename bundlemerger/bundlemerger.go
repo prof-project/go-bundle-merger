@@ -58,10 +58,15 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 	for {
 		req, err := stream.Recv()
 		if err == io.EOF {
-			fmt.Printf("Stream closed by client: %v\n", err)
+			// Client closed stream normally
+			return nil
+		}
+		if status.Code(err) == codes.Canceled {
+			// Client canceled the stream - this is normal
 			return nil
 		}
 		if err != nil {
+			// Log other errors and return them
 			fmt.Printf("Error receiving from stream: %v\n", err)
 			return err
 		}
@@ -120,8 +125,19 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		fmt.Printf("profValidationResp %+v\n", profValidationResp)
 
 		enrichedPayload := profValidationResp.ExecutionPayload
+		if enrichedPayload == nil {
+			return status.Errorf(codes.Internal, "Execution payload is nil")
+		}
+		fmt.Printf("Step 1: Got enriched payload: %+v\n", enrichedPayload)
+
 		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)
+		if enrichedPayloadProto == nil {
+			return status.Errorf(codes.Internal, "Failed to convert to proto payload")
+		}
+		fmt.Printf("Step 2: Converted to proto payload: %+v\n", enrichedPayloadProto)
+
 		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
+		fmt.Printf("Step 3: Converted blobs bundle: %+v\n", enrichedBlobProto)
 
 		// Save the enriched payload in the pool
 		enrichedPayloadData := &EnrichedPayload{
@@ -132,28 +148,35 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			},
 			ReceivedAt: time.Now(),
 		}
+		fmt.Printf("Step 4: Created enriched payload data: %+v\n", enrichedPayloadData)
+
 		s.enrichedPayloadPool.Add(enrichedPayloadData)
+		fmt.Printf("Step 5: Added to pool\n")
 
 		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
-			&builderApi.VersionedExecutionPayload{ //nolint:exhaustivestruct
+			&builderApi.VersionedExecutionPayload{
 				Version: spec.DataVersionDeneb,
 				Deneb:   enrichedPayload.ExecutionPayload,
 			},
 		)
 		if err != nil {
-			return err
+			fmt.Printf("Error creating payload header: %v\n", err)
+			return fmt.Errorf("failed to convert to payload header: %v", err)
 		}
+		fmt.Printf("Step 6: Created payload header: %+v\n", enrichedPayloadHeader)
 
 		resp := &relay_grpc.EnrichBlockResponse{
 			Uuid:                   req.Uuid,
-			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb), // TODO: Check that this is implemented
+			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb),
 			KzgCommitment:          utils.CommitmentsToProtoCommitments(enrichedPayload.BlobsBundle.Commitments),
-			Value:                  profValidationResp.Value.Uint64(), // TODO: https://github.com/prof-project/prof-grpc/issues/2
+			Value:                  profValidationResp.Value.Uint64(),
 		}
+		fmt.Printf("Step 7: Created response: %+v\n", resp)
 
 		if err := stream.Send(resp); err != nil {
-			return status.Errorf(codes.Internal, "Failed to send response: %v", err)
+			return fmt.Errorf("failed to send response: %v", err)
 		}
+		fmt.Printf("Step 8: Sent response\n")
 	}
 }
 
