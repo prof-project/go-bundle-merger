@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	builderApi "github.com/attestantio/go-builder-client/api"
+	apiv1deneb "github.com/attestantio/go-eth2-client/api/v1/deneb"
 	"github.com/attestantio/go-eth2-client/spec"
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	bv "github.com/ethereum/go-ethereum/eth/block-validation"
@@ -78,16 +80,9 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			return status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 		}
 
-		// Convert Deneb Request to Block
-		pbsBlock, err := engine.ExecutionPayloadV3ToBlock(denebRequest.PayloadBundle.ExecutionPayload, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
-		if err != nil {
-			return err
-		}
-
-		// Print Block to see that reconstruction from gRPC works
-		fmt.Printf("got ExecutionPayloadV3ToBlock %+v\n", pbsBlock)
-
 		profBundle, err := s.getProfBundle()
+
+		// fmt.Printf("profBundle %+v\n", profBundle)
 
 		if err != nil {
 			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
@@ -105,15 +100,18 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		if err != nil {
 			return err
 		}
+
+		// registeredGasLimit := profBlock.Header().GasLimit
 		params := []interface{}{
 			blockData,
 			denebRequest.BidTrace.ProposerFeeRecipient,
-			uint64(0), // Set a suitable gas limit
+			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
 
 		var profValidationResp *bv.ProfSimResp
 		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
+			fmt.Printf("Error calling flashbots_validateProfBlock: %v\n", err)
 			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
 		}
 
@@ -139,9 +137,11 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
 		fmt.Printf("Step 3: Converted blobs bundle: %+v\n", enrichedBlobProto)
 
-		// Save the enriched payload in the pool
+		// Instead of using req.Uuid as the key, use the block hash
+		blockHash := enrichedPayload.ExecutionPayload.BlockHash.String()
+
 		enrichedPayloadData := &EnrichedPayload{
-			UUID: req.Uuid,
+			UUID: blockHash, // Store using block hash instead of request UUID
 			Payload: &relay_grpc.ExecutionPayloadAndBlobsBundle{
 				ExecutionPayload: enrichedPayloadProto,
 				BlobsBundle:      enrichedBlobProto,
@@ -152,6 +152,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		s.enrichedPayloadPool.Add(enrichedPayloadData)
 		fmt.Printf("Step 5: Added to pool\n")
+		fmt.Printf("enrichedPayloadData blockHash %+v\n", enrichedPayloadData.UUID)
 
 		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
 			&builderApi.VersionedExecutionPayload{
@@ -187,6 +188,8 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 	// Retrieve bundles from the pool
 	bundles := s.pool.getBundlesForProcessing(bundleLimit, true)
 
+	fmt.Printf("bundles %+v\n", bundles)
+
 	if len(bundles) == 0 {
 		return nil, fmt.Errorf("no bundles available for processing")
 	}
@@ -209,19 +212,23 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 
 // TODO - Once payload is fetched, there is yet no marking for deletion --> To be added
 func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
-	// Extract the UUID from the request message
-	uuid := string(req.Message)
+	
+	fmt.Printf("CALLED ENRICH PAYLOAD")
+	// Deserialize the blinded beacon block
+	var blindedBlock apiv1deneb.BlindedBeaconBlock
+	if err := json.Unmarshal(req.Message, &blindedBlock); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Failed to unmarshal beacon block: %v", err)
+	}
+
+	// Use the block hash from the execution payload header as the lookup key
+	blockHash := blindedBlock.Body.ExecutionPayloadHeader.BlockHash.String()
 
 	// Retrieve the enriched payload from the pool
-	enrichedPayload, exists := s.enrichedPayloadPool.Get(uuid)
+	enrichedPayload, exists := s.enrichedPayloadPool.Get(blockHash)
 	if !exists {
-		return nil, status.Errorf(codes.NotFound, "Enriched payload not found for UUID: %s", uuid)
+		return nil, status.Errorf(codes.NotFound, "Enriched payload not found for block hash: %s", blockHash)
 	}
+	fmt.Printf("FOUND the requested enrichedPayload %+v\n", enrichedPayload)
 
-	// Create and return the response
-	response := &relay_grpc.ExecutionPayloadAndBlobsBundle{
-		ExecutionPayload: enrichedPayload.Payload.ExecutionPayload,
-		BlobsBundle:      enrichedPayload.Payload.BlobsBundle,
-	}
-	return response, nil
+	return enrichedPayload.Payload, nil
 }
