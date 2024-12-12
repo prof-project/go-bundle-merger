@@ -29,5 +29,9 @@ COPY --from=builder /enclave-server /enclave-server
 # Copy the configuration file
 COPY cmd/server/config.yaml /config.yaml
 
+# Expose the port your service listens on
+EXPOSE 80
+EXPOSE 50051
+
 # Set the entry point to run the server
-CMD ["/enclave-server"]
+ENTRYPOINT ["/enclave-server"]

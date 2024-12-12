@@ -2,8 +2,10 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
+	"net/http"
 
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prof-project/go-bundle-merger/bundlemerger"
@@ -25,7 +27,7 @@ func main() {
 		log.Fatal("--builder-uri flag is required")
 	}
 
-	listener, err := net.Listen("tcp", ":50051")
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
@@ -46,11 +48,26 @@ func main() {
 		BundleService: bundleServiceServer,
 	}
 
+	// Start health check endpoint
+	go startHealthCheck()
+
 	bundleMergerServer := bundlemerger.NewBundleMergerServerEth(opts)
 	relay_grpc.RegisterEnricherServer(s, bundleMergerServer)
 
 	log.Printf("Server listening on port %d", port)
 	if err := s.Serve(listener); err != nil {
 		log.Fatalf("failed to serve: %v", err)
+	}
+}
+
+// Start a simple HTTP server for health checks
+func startHealthCheck() {
+	http.HandleFunc("/enhancer/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("{\"status\": \"healthy\"}"))
+	})
+	log.Println("Health check endpoint running on port 80...")
+	if err := http.ListenAndServe(":80", nil); err != nil {
+		log.Fatalf("Failed to start health check endpoint: %v", err)
 	}
 }
