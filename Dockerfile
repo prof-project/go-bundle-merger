@@ -35,9 +35,6 @@ RUN apk add --no-cache curl
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
 
-# Copy the configuration file
-COPY cmd/server/config.yaml /config.yaml
-
 # Expose the port your service listens on
 EXPOSE 80
 EXPOSE 50051
