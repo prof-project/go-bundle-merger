@@ -20,8 +20,17 @@ WORKDIR /app/cmd/server
 # Build the Go application (specify the main.go as the entry point)
 RUN go build -o /enclave-server main.go
 
+# Install upx
+RUN apk add --no-cache upx
+
+# Compress the compiled binary
+RUN upx -q -9 /enclave-server
+
 # Final Stage
 FROM alpine:latest
+
+# Install curl
+RUN apk add --no-cache curl
 
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
