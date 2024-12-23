@@ -16,7 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
-	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 )
 
 func ExecutionPayloadToProtoEnrichBlockRequest(uuid string,

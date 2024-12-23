@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 )
 
 type EnrichedPayload struct {

@@ -20,7 +20,7 @@ import (
 	bv "github.com/ethereum/go-ethereum/eth/block-validation"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
 	"github.com/prof-project/go-bundle-merger/utils"
-	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -81,9 +81,6 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 
 		profBundle, err := s.getProfBundle()
-
-		// fmt.Printf("profBundle %+v\n", profBundle)
-
 		if err != nil {
 			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
 		}
@@ -94,6 +91,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			fmt.Printf("Error converting Deneb Request and Prof transactions to Block: %v\n", err)
 			return err
 		}
+
 		fmt.Printf("PROF block before execution %+v\n", profBlock)
 
 		blockData, err := serializeBlock(profBlock)

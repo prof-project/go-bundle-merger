@@ -32,7 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/prof-project/go-bundle-merger/utils"
-	relay_grpc "github.com/prof-project/prof-grpc/go/relay_grpc"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"google.golang.org/grpc"
 )
 
