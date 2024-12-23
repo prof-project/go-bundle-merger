@@ -20,14 +20,24 @@ WORKDIR /app/cmd/server
 # Build the Go application (specify the main.go as the entry point)
 RUN go build -o /enclave-server main.go
 
+# Install upx
+RUN apk add --no-cache upx
+
+# Compress the compiled binary
+RUN upx -q -9 /enclave-server
+
 # Final Stage
 FROM alpine:latest
+
+# Install curl
+RUN apk add --no-cache curl
 
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
 
-# Copy the configuration file
-COPY cmd/server/config.yaml /config.yaml
+# Expose the port your service listens on
+EXPOSE 80
+EXPOSE 50051
 
 # Set the entry point to run the server
-CMD ["/enclave-server"]
+ENTRYPOINT ["/enclave-server"]
