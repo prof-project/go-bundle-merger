@@ -213,6 +213,20 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*relay_grpc.E
 
 // Converts a relay_grpc.EnrichBlockRequest to a DenebEnrichBlockRequest.
 func ProtoRequestToDenebRequest(request *relay_grpc.EnrichBlockRequest) (*DenebEnrichBlockRequest, error) {
+	// Add initial nil checks
+	if request == nil {
+		return nil, fmt.Errorf("request is nil")
+	}
+	if request.ExecutionPayloadAndBlobsBundle == nil {
+		return nil, fmt.Errorf("ExecutionPayloadAndBlobsBundle is nil")
+	}
+	if request.ExecutionPayloadAndBlobsBundle.ExecutionPayload == nil {
+		return nil, fmt.Errorf("ExecutionPayload is nil")
+	}
+	if request.BidTrace == nil {
+		return nil, fmt.Errorf("BidTrace is nil")
+	}
+
 	transactions := make([]bellatrix.Transaction, len(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions))
 	for index, tx := range request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.Transactions {
 		transactions[index] = tx.RawData
