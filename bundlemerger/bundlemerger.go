@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -57,50 +58,50 @@ func serializeBlock(block *types.Block) (string, error) {
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
 func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamServer) error {
-	fmt.Printf("Starting new EnrichBlockStream connection\n")
+	log.Printf("[INFO] Starting new EnrichBlockStream connection")
 	
 	for {
-		fmt.Printf("Waiting for new request on stream...\n")
+		log.Printf("[INFO] Waiting for new request on stream...")
 		req, err := stream.Recv()
 		if err == io.EOF {
-			fmt.Printf("Client closed stream normally (EOF)\n")
+			log.Printf("[INFO] Client closed stream normally (EOF)")
 			return nil
 		}
 		if status.Code(err) == codes.Canceled {
-			fmt.Printf("Client canceled the stream\n")
+			log.Printf("[INFO] Client canceled the stream")
 			return nil
 		}
 		if err != nil {
-			fmt.Printf("Error receiving from stream: %v\n", err)
+			log.Printf("[ERROR] Error receiving from stream: %v", err)
 			return err
 		}
-		fmt.Printf("Received new request with UUID: %s\n", req.Uuid)
+		log.Printf("[INFO] Received new request with UUID: %s", req.Uuid)
 
 		// Convert Proto Request to DenebRequest
-		fmt.Printf("Converting ProtoRequest to DenebRequest...\n")
+		log.Printf("[INFO] Converting ProtoRequest to DenebRequest...")
 		denebRequest, err := utils.ProtoRequestToDenebRequest(req)
 		if err != nil {
-			fmt.Printf("Error converting ProtoRequest to DenebRequest: %v\n", err)
+			log.Printf("[ERROR] Error converting ProtoRequest to DenebRequest: %v", err)
 			return status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 		}
-		fmt.Printf("Successfully converted request to DenebRequest\n")
+		log.Printf("[INFO] Successfully converted request to DenebRequest")
 
-		fmt.Printf("Retrieving PROF bundle...\n")
+		log.Printf("[INFO] Retrieving PROF bundle...")
 		profBundle, err := s.getProfBundle()
 		if err != nil {
-			fmt.Printf("Failed to retrieve PROF bundle: %v\n", err)
+			log.Printf("[ERROR] Failed to retrieve PROF bundle: %v", err)
 			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
 		}
-		fmt.Printf("Successfully retrieved PROF bundle with %d transactions\n", len(profBundle))
+		log.Printf("[INFO] Successfully retrieved PROF bundle with %d transactions", len(profBundle))
 
 		// Convert Deneb Request and Prof transactions to Block
 		profBlock, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
 		if err != nil {
-			fmt.Printf("Error converting Deneb Request and Prof transactions to Block: %v\n", err)
+			log.Printf("[ERROR] Error converting Deneb Request and Prof transactions to Block: %v", err)
 			return err
 		}
 
-		fmt.Printf("PROF block before execution %+v\n", profBlock)
+		log.Printf("[INFO] PROF block before execution %+v", profBlock)
 
 		blockData, err := serializeBlock(profBlock)
 		if err != nil {
@@ -114,40 +115,41 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
 
-		fmt.Printf("Calling flashbots_validateProfBlock...\n")
+		log.Printf("[INFO] Calling flashbots_validateProfBlock...")
 		var profValidationResp *bv.ProfSimResp
 		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
-			fmt.Printf("Error calling flashbots_validateProfBlock: %v\n", err)
+			log.Printf("[ERROR] Error calling flashbots_validateProfBlock: %v", err)
 			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
 		}
-		fmt.Printf("Successfully validated PROF block\n")
+		log.Printf("[INFO] Successfully validated PROF block")
 
 		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
 		// if err != nil {
 		// 	return err
 		// }
 
-		fmt.Printf("profValidationResp %+v\n", profValidationResp)
+		log.Printf("[INFO] profValidationResp %+v", profValidationResp)
 
 		enrichedPayload := profValidationResp.ExecutionPayload
 		if enrichedPayload == nil {
 			return status.Errorf(codes.Internal, "Execution payload is nil")
 		}
-		fmt.Printf("Step 1: Got enriched payload: %+v\n", enrichedPayload)
+		log.Printf("[INFO] Step 1: Got enriched payload: %+v", enrichedPayload)
 
 		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)
 		if enrichedPayloadProto == nil {
 			return status.Errorf(codes.Internal, "Failed to convert to proto payload")
 		}
-		fmt.Printf("Step 2: Converted to proto payload: %+v\n", enrichedPayloadProto)
+		log.Printf("[INFO] Step 2: Converted to proto payload: %+v", enrichedPayloadProto)
 
 		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
-		fmt.Printf("Step 3: Converted blobs bundle: %+v\n", enrichedBlobProto)
+		log.Printf("[INFO] Step 3: Converted blobs bundle: %+v", enrichedBlobProto)
 
 		// Instead of using req.Uuid as the key, use the block hash
 		blockHash := enrichedPayload.ExecutionPayload.BlockHash.String()
 
+		
 		enrichedPayloadData := &EnrichedPayload{
 			UUID: blockHash, // Store using block hash instead of request UUID
 			Payload: &relay_grpc.ExecutionPayloadAndBlobsBundle{
@@ -156,11 +158,11 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			},
 			ReceivedAt: time.Now(),
 		}
-		fmt.Printf("Step 4: Created enriched payload data: %+v\n", enrichedPayloadData)
+		log.Printf("[INFO] Step 4: Created enriched payload data: %+v", enrichedPayloadData)
 
 		s.enrichedPayloadPool.Add(enrichedPayloadData)
-		fmt.Printf("Step 5: Added to pool\n")
-		fmt.Printf("enrichedPayloadData blockHash %+v\n", enrichedPayloadData.UUID)
+		log.Printf("[INFO] Step 5: Added to pool")
+		log.Printf("[INFO] enrichedPayloadData blockHash %+v", enrichedPayloadData.UUID)
 
 		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
 			&builderApi.VersionedExecutionPayload{
@@ -169,10 +171,10 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			},
 		)
 		if err != nil {
-			fmt.Printf("Error creating payload header: %v\n", err)
+			log.Printf("[ERROR] Error creating payload header: %v", err)
 			return fmt.Errorf("failed to convert to payload header: %v", err)
 		}
-		fmt.Printf("Step 6: Created payload header: %+v\n", enrichedPayloadHeader)
+		log.Printf("[INFO] Step 6: Created payload header: %+v", enrichedPayloadHeader)
 
 		resp := &relay_grpc.EnrichBlockResponse{
 			Uuid:                   req.Uuid,
@@ -180,14 +182,14 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			KzgCommitment:          utils.CommitmentsToProtoCommitments(enrichedPayload.BlobsBundle.Commitments),
 			Value:                  profValidationResp.Value.Uint64(),
 		}
-		fmt.Printf("Step 7: Created response: %+v\n", resp)
+		log.Printf("[INFO] Step 7: Created response: %+v", resp)
 
-		fmt.Printf("Sending response for UUID %s with block hash %s\n", req.Uuid, blockHash)
+		log.Printf("[INFO] Sending response for UUID %s with block hash %s", req.Uuid, blockHash)
 		if err := stream.Send(resp); err != nil {
-			fmt.Printf("Failed to send response: %v\n", err)
+			log.Printf("[ERROR] Failed to send response: %v", err)
 			return fmt.Errorf("failed to send response: %v", err)
 		}
-		fmt.Printf("Successfully sent response for UUID %s\n", req.Uuid)
+		log.Printf("[INFO] Successfully sent response for UUID %s", req.Uuid)
 	}
 }
 
@@ -198,7 +200,7 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 	// Retrieve bundles from the pool
 	bundles := s.pool.getBundlesForProcessing(bundleLimit, true)
 
-	fmt.Printf("bundles %+v\n", bundles)
+	log.Printf("[INFO] bundles %+v", bundles)
 
 	if len(bundles) == 0 {
 		return nil, fmt.Errorf("no bundles available for processing")
@@ -223,7 +225,7 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 // TODO - Once payload is fetched, there is yet no marking for deletion --> To be added
 func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
 	
-	fmt.Printf("CALLED ENRICH PAYLOAD")
+	log.Printf("[INFO] CALLED ENRICH PAYLOAD")
 	// Deserialize the blinded beacon block
 	var blindedBlock apiv1deneb.BlindedBeaconBlock
 	if err := json.Unmarshal(req.Message, &blindedBlock); err != nil {
@@ -238,7 +240,7 @@ func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "Enriched payload not found for block hash: %s", blockHash)
 	}
-	fmt.Printf("FOUND the requested enrichedPayload %+v\n", enrichedPayload)
+	log.Printf("[INFO] FOUND the requested enrichedPayload %+v", enrichedPayload)
 
 	return enrichedPayload.Payload, nil
 }
