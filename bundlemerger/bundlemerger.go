@@ -57,33 +57,41 @@ func serializeBlock(block *types.Block) (string, error) {
 
 // EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
 func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamServer) error {
+	fmt.Printf("Starting new EnrichBlockStream connection\n")
+	
 	for {
+		fmt.Printf("Waiting for new request on stream...\n")
 		req, err := stream.Recv()
 		if err == io.EOF {
-			// Client closed stream normally
+			fmt.Printf("Client closed stream normally (EOF)\n")
 			return nil
 		}
 		if status.Code(err) == codes.Canceled {
-			// Client canceled the stream - this is normal
+			fmt.Printf("Client canceled the stream\n")
 			return nil
 		}
 		if err != nil {
-			// Log other errors and return them
 			fmt.Printf("Error receiving from stream: %v\n", err)
 			return err
 		}
+		fmt.Printf("Received new request with UUID: %s\n", req.Uuid)
 
 		// Convert Proto Request to DenebRequest
+		fmt.Printf("Converting ProtoRequest to DenebRequest...\n")
 		denebRequest, err := utils.ProtoRequestToDenebRequest(req)
 		if err != nil {
 			fmt.Printf("Error converting ProtoRequest to DenebRequest: %v\n", err)
 			return status.Errorf(codes.InvalidArgument, "Invalid request: %v", err)
 		}
+		fmt.Printf("Successfully converted request to DenebRequest\n")
 
+		fmt.Printf("Retrieving PROF bundle...\n")
 		profBundle, err := s.getProfBundle()
 		if err != nil {
+			fmt.Printf("Failed to retrieve PROF bundle: %v\n", err)
 			return status.Errorf(codes.Internal, "Error retrieving PROF bundle: %v", err)
 		}
+		fmt.Printf("Successfully retrieved PROF bundle with %d transactions\n", len(profBundle))
 
 		// Convert Deneb Request and Prof transactions to Block
 		profBlock, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
@@ -106,12 +114,14 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
 
+		fmt.Printf("Calling flashbots_validateProfBlock...\n")
 		var profValidationResp *bv.ProfSimResp
 		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
 			fmt.Printf("Error calling flashbots_validateProfBlock: %v\n", err)
 			return status.Errorf(codes.Internal, "Error calling flashbots_validateProfBlock: %v", err)
 		}
+		fmt.Printf("Successfully validated PROF block\n")
 
 		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
 		// if err != nil {
@@ -172,10 +182,12 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 		fmt.Printf("Step 7: Created response: %+v\n", resp)
 
+		fmt.Printf("Sending response for UUID %s with block hash %s\n", req.Uuid, blockHash)
 		if err := stream.Send(resp); err != nil {
+			fmt.Printf("Failed to send response: %v\n", err)
 			return fmt.Errorf("failed to send response: %v", err)
 		}
-		fmt.Printf("Step 8: Sent response\n")
+		fmt.Printf("Successfully sent response for UUID %s\n", req.Uuid)
 	}
 }
 
