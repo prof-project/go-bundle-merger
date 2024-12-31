@@ -142,7 +142,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		// registeredGasLimit := profBlock.Header().GasLimit
 		params := []interface{}{
 			blockData,
-			denebRequest.BidTrace.ProposerFeeRecipient,
+			denebRequest.PayloadBundle.ExecutionPayload.FeeRecipient,
 			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
 
