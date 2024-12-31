@@ -76,6 +76,24 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 		log.Printf("[INFO] Received new request with UUID: %s", req.Uuid)
 
+		// Sanity check to ensure req has all required fields set
+		if req.Uuid == "" {
+			log.Printf("[ERROR] Missing required field: Uuid")
+			return status.Errorf(codes.InvalidArgument, "missing required field: Uuid")
+		}
+		if req.ExecutionPayloadAndBlobsBundle == nil {
+			log.Printf("[ERROR] Missing required field: ExecutionPayloadAndBlobsBundle")
+			return status.Errorf(codes.InvalidArgument, "missing required field: ExecutionPayloadAndBlobsBundle")
+		}
+		if req.BidTrace == nil {
+			log.Printf("[ERROR] Missing required field: BidTrace")
+			return status.Errorf(codes.InvalidArgument, "missing required field: BidTrace")
+		}
+		if len(req.ParentBeaconRoot) == 0 {
+			log.Printf("[ERROR] Missing required field: ParentBeaconRoot")
+			return status.Errorf(codes.InvalidArgument, "missing required field: ParentBeaconRoot")
+		}
+
 		log.Printf("[INFO] Value of unenriched PBS block is: %+v", req.BidTrace.Value)
 
 		// Convert Proto Request to DenebRequest
