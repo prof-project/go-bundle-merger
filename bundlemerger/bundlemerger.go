@@ -107,6 +107,9 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		log.Printf("[INFO] Value of unenriched PBS block is: %s (decimal: %d)", req.BidTrace.Value, unEnrichedValue)
 
+		log.Printf("[INFO] This is the fee recipient: %+v", req.ExecutionPayloadAndBlobsBundle.ExecutionPayload.FeeRecipient)
+		log.Printf("[INFO] This is the proposer fee recipient: %+v", req.BidTrace.ProposerFeeRecipient)
+
 		// Convert Proto Request to DenebRequest
 		denebRequest, err := utils.ProtoRequestToDenebRequest(req)
 		if err != nil {
