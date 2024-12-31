@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -227,10 +228,22 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 	}
 
 	var profBundles [][]byte
+	totalValue := new(big.Int)
 
 	for _, bundle := range bundles {
 		for _, tx := range bundle.Txs {
-			// Serialize each transaction to RLP (or any other required format)
+			// Calculate the potential value of this transaction
+			gasPrice := tx.GasPrice()
+			gasLimit := tx.Gas()
+			value := new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gasLimit))
+
+			log.Printf("[DEBUG] Transaction value: %s wei (gasPrice: %s, gasLimit: %d)",
+				value.String(),
+				gasPrice.String(),
+				gasLimit)
+
+			totalValue.Add(totalValue, value)
+
 			serializedTx, err := tx.MarshalBinary()
 			if err != nil {
 				return nil, fmt.Errorf("failed to serialize transaction: %v", err)
@@ -238,6 +251,8 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 			profBundles = append(profBundles, serializedTx)
 		}
 	}
+
+	log.Printf("[DEBUG] Total potential value from transactions: %s wei", totalValue.String())
 
 	return profBundles, nil
 }
