@@ -76,7 +76,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 		log.Printf("[INFO] Received new request with UUID: %s", req.Uuid)
 
-		log.Printf("[INFO] BlockHash of unenriched PBS block is: %+v", req.BidTrace.BlockHash)
+		log.Printf("[INFO] Value of unenriched PBS block is: %+v", req.BidTrace.Value)
 
 		// Convert Proto Request to DenebRequest
 		denebRequest, err := utils.ProtoRequestToDenebRequest(req)
