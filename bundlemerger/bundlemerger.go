@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -95,7 +97,15 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			return status.Errorf(codes.InvalidArgument, "missing required field: ParentBeaconRoot")
 		}
 
-		log.Printf("[INFO] Value of unenriched PBS block is: %+v", req.BidTrace.Value)
+		// Convert hex string value to uint64
+		unEnrichedValueHex := strings.TrimPrefix(req.BidTrace.Value, "0x")
+		unEnrichedValue, err := strconv.ParseUint(unEnrichedValueHex, 16, 64)
+		if err != nil {
+			log.Printf("[ERROR] Failed to parse unenriched value: %v", err)
+			return status.Errorf(codes.Internal, "Failed to parse unenriched value: %v", err)
+		}
+
+		log.Printf("[INFO] Value of unenriched PBS block is: %s (decimal: %d)", req.BidTrace.Value, unEnrichedValue)
 
 		// Convert Proto Request to DenebRequest
 		denebRequest, err := utils.ProtoRequestToDenebRequest(req)
@@ -204,6 +214,14 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		log.Printf("[INFO] Value of unenriched PBS block is: %+v", req.BidTrace.Value)
 
 		log.Printf("[INFO] Value of enriched PBS block is: %+v", resp.Value)
+
+		// Ensure enriched value is greater than unenriched value
+		if resp.Value <= unEnrichedValue {
+			log.Printf("[ERROR] Enriched block value (%d) is not greater than unenriched value (%d)",
+				resp.Value, unEnrichedValue)
+			return status.Errorf(codes.Internal,
+				"Enriched block value must be greater than unenriched value")
+		}
 
 		log.Printf("[INFO] Sending response for UUID %s with block hash %s", req.Uuid, blockHash)
 		if err := stream.Send(resp); err != nil {
