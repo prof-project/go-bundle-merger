@@ -1,22 +1,27 @@
 package utils
 
 import (
+	builderApiV1 "github.com/attestantio/go-builder-client/api/v1"
+	v1 "github.com/attestantio/go-builder-client/api/v1"
+	"github.com/attestantio/go-eth2-client/spec/bellatrix"
+	consensus "github.com/attestantio/go-eth2-client/spec/deneb"
+	"github.com/attestantio/go-eth2-client/spec/phase0"
+
+	"crypto/sha256"
 	"fmt"
 	"math/big"
 
 	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
-	builderApiV1 "github.com/attestantio/go-builder-client/api/v1"
-	v1 "github.com/attestantio/go-builder-client/api/v1"
-	"github.com/attestantio/go-eth2-client/spec/bellatrix"
+	denebapi "github.com/attestantio/go-builder-client/api/deneb"
 	"github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
-	consensus "github.com/attestantio/go-eth2-client/spec/deneb"
-	"github.com/attestantio/go-eth2-client/spec/phase0"
-	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/holiman/uint256"
+
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
+	"github.com/ethereum/go-ethereum/beacon/engine"
 )
 
 func ExecutionPayloadToProtoEnrichBlockRequest(uuid string,
@@ -332,25 +337,25 @@ func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.Execu
 	if header == nil {
 		return &relay_grpc.ExecutionPayloadHeader{}
 	}
-	
+
 	return &relay_grpc.ExecutionPayloadHeader{
 		ParentHash:       header.ParentHash[:],
-		FeeRecipient:    header.FeeRecipient[:],
-		StateRoot:       header.StateRoot[:],
-		ReceiptsRoot:    header.ReceiptsRoot[:],
-		LogsBloom:       header.LogsBloom[:],
-		PrevRandao:      header.PrevRandao[:],
-		BlockNumber:     header.BlockNumber,
-		GasLimit:        header.GasLimit,
-		GasUsed:         header.GasUsed,
-		Timestamp:       header.Timestamp,
-		ExtraData:       header.ExtraData,
-		BaseFeePerGas:   uint256ToIntToByteSlice(header.BaseFeePerGas),
-		BlockHash:       header.BlockHash[:],
+		FeeRecipient:     header.FeeRecipient[:],
+		StateRoot:        header.StateRoot[:],
+		ReceiptsRoot:     header.ReceiptsRoot[:],
+		LogsBloom:        header.LogsBloom[:],
+		PrevRandao:       header.PrevRandao[:],
+		BlockNumber:      header.BlockNumber,
+		GasLimit:         header.GasLimit,
+		GasUsed:          header.GasUsed,
+		Timestamp:        header.Timestamp,
+		ExtraData:        header.ExtraData,
+		BaseFeePerGas:    uint256ToIntToByteSlice(header.BaseFeePerGas),
+		BlockHash:        header.BlockHash[:],
 		TransactionsRoot: header.TransactionsRoot[:],
-		WithdrawalsRoot: header.WithdrawalsRoot[:],
-		BlobGasUsed:    header.BlobGasUsed,
-		ExcessBlobGas:  header.ExcessBlobGas,
+		WithdrawalsRoot:  header.WithdrawalsRoot[:],
+		BlobGasUsed:      header.BlobGasUsed,
+		ExcessBlobGas:    header.ExcessBlobGas,
 	}
 }
 
@@ -474,4 +479,67 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.Exe
 	}
 
 	return protoPayload
+}
+
+func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte, blobsBundle *denebapi.BlobsBundle, parentBeaconBlockRoot common.Hash) (*types.Block, error) {
+	// Convert payload transactions to [][]byte
+	txs := make([][]byte, len(payload.Transactions)+len(profTxs))
+	for i, tx := range payload.Transactions {
+		txs[i] = tx
+	}
+	// Copy prof transactions
+	copy(txs[len(payload.Transactions):], profTxs)
+
+	// Create executable data
+	executableData := engine.ExecutableData{
+		ParentHash:    common.Hash(payload.ParentHash),
+		FeeRecipient:  common.Address(payload.FeeRecipient),
+		StateRoot:     common.Hash(payload.StateRoot),
+		ReceiptsRoot:  common.Hash(payload.ReceiptsRoot),
+		LogsBloom:     payload.LogsBloom[:],
+		Random:        common.Hash(payload.PrevRandao),
+		Number:        payload.BlockNumber,
+		GasLimit:      payload.GasLimit,
+		GasUsed:       0, // Will be computed during execution
+		Timestamp:     payload.Timestamp,
+		ExtraData:     payload.ExtraData,
+		BaseFeePerGas: payload.BaseFeePerGas.ToBig(),
+		BlockHash:     common.Hash(payload.BlockHash),
+		Transactions:  txs,
+		Withdrawals:   convertWithdrawals(payload.Withdrawals),
+		BlobGasUsed:   &payload.BlobGasUsed,
+		ExcessBlobGas: &payload.ExcessBlobGas,
+	}
+
+	// Calculate versioned hashes for blobs
+	versionedHashes := calculateVersionedHashes(blobsBundle)
+
+	// Use the standard engine package function
+	return engine.ExecutableDataToBlockNoHash(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
+}
+
+// Helper function to convert withdrawals
+func convertWithdrawals(withdrawals []*capella.Withdrawal) []*types.Withdrawal {
+	result := make([]*types.Withdrawal, len(withdrawals))
+	for i, w := range withdrawals {
+		result[i] = &types.Withdrawal{
+			Index:     uint64(w.Index),
+			Validator: uint64(w.ValidatorIndex),
+			Address:   common.Address(w.Address),
+			Amount:    uint64(w.Amount),
+		}
+	}
+	return result
+}
+
+// Helper function to calculate versioned hashes
+func calculateVersionedHashes(blobsBundle *denebapi.BlobsBundle) []common.Hash {
+	hasher := sha256.New()
+	versionedHashes := make([]common.Hash, len(blobsBundle.Commitments))
+	for i, commitment := range blobsBundle.Commitments {
+		c := kzg4844.Commitment(commitment)
+		computed := kzg4844.CalcBlobHashV1(hasher, &c)
+		versionedHashes[i] = common.Hash(computed)
+	}
+	return versionedHashes
 }
