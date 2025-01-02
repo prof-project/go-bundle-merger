@@ -14,16 +14,18 @@ import (
 	"strings"
 	"time"
 
+	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/holiman/uint256"
 
 	builderApi "github.com/attestantio/go-builder-client/api"
 	apiv1deneb "github.com/attestantio/go-eth2-client/api/v1/deneb"
 	"github.com/attestantio/go-eth2-client/spec"
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
-	"github.com/ethereum/go-ethereum/beacon/engine"
-	bv "github.com/ethereum/go-ethereum/eth/block-validation"
+	"github.com/ethpandaops/spamoor/txbuilder"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
 	"github.com/prof-project/go-bundle-merger/utils"
 	"google.golang.org/grpc/codes"
@@ -34,6 +36,8 @@ import (
 type ServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
+	WalletPrivKey string
+	ChainID       *big.Int
 }
 
 // Server represents the bundle merger server.
@@ -42,14 +46,28 @@ type Server struct {
 	pool                *TxBundlePool
 	enrichedPayloadPool *EnrichedPayloadPool
 	execClient          *rpc.Client
+	wallet              *txbuilder.Wallet
+}
+
+type profValidationResponse struct {
+	Value            *uint256.Int
+	ExecutionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle
 }
 
 // NewBundleMergerServerEth creates a new bundle merger server for Ethereum.
 func NewBundleMergerServerEth(opts ServerOpts) *Server {
+	// Initialize wallet
+	wallet, err := txbuilder.NewWallet(opts.WalletPrivKey)
+	if err != nil {
+		log.Printf("[ERROR] Failed to initialize wallet: %v", err)
+		return nil
+	}
+
 	return &Server{
 		pool:                opts.BundleService.txBundlePool,
-		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
+		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute),
 		execClient:          opts.ExecClient,
+		wallet:              wallet,
 	}
 }
 
@@ -128,8 +146,55 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 		}
 		log.Printf("[INFO] Successfully retrieved PROF bundle with %d transactions", len(profBundle))
 
+		// Add the direct payment transaction if needed
+		if denebRequest.BidTrace.ProposerFeeRecipient != denebRequest.PayloadBundle.ExecutionPayload.FeeRecipient {
+			log.Printf("[INFO] Fee recipient is not the same as the proposer fee recipient, adding tx to prof bundle")
+
+			// Set fee caps (in Gwei)
+			feeCap := new(big.Int).Mul(big.NewInt(150), big.NewInt(1000000000)) // 150 Gwei
+			tipCap := new(big.Int).Mul(big.NewInt(140), big.NewInt(1000000000)) // 140 Gwei
+
+			// Set amount (in Gwei)
+			amount := uint256.NewInt(1000) // 1000 Gwei
+			amount = amount.Mul(amount, uint256.NewInt(1000000000))
+
+			// Convert proposer fee recipient to common.Address
+			proposerAddr := common.Address(denebRequest.BidTrace.ProposerFeeRecipient)
+
+			// Create direct payment transaction data
+			txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
+				GasFeeCap: uint256.MustFromBig(feeCap),
+				GasTipCap: uint256.MustFromBig(tipCap),
+				Gas:       21000, // Standard ETH transfer gas limit
+				To:        &proposerAddr,
+				Value:     amount,
+				Data:      []byte{},
+			})
+			if err != nil {
+				log.Printf("[ERROR] Failed to create direct payment tx: %v", err)
+				return status.Errorf(codes.Internal, "Failed to create direct payment tx: %v", err)
+			}
+
+			// Build and sign the transaction
+			signedTx, err := s.wallet.BuildDynamicFeeTx(txData)
+			if err != nil {
+				log.Printf("[ERROR] Failed to build and sign transaction: %v", err)
+				return status.Errorf(codes.Internal, "Failed to build and sign transaction: %v", err)
+			}
+
+			// Serialize the signed transaction
+			serializedTx, err := signedTx.MarshalBinary()
+			if err != nil {
+				log.Printf("[ERROR] Failed to serialize transaction: %v", err)
+				return status.Errorf(codes.Internal, "Failed to serialize transaction: %v", err)
+			}
+
+			// Add the serialized transaction to prof bundle
+			profBundle = append(profBundle, serializedTx)
+		}
+
 		// Convert Deneb Request and Prof transactions to Block
-		profBlock, err := engine.ExecutionPayloadV3ToBlockProf(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
+		profBlock, err := utils.ExecutionPayloadV3ToBlock(denebRequest.PayloadBundle.ExecutionPayload, profBundle, denebRequest.PayloadBundle.BlobsBundle, denebRequest.ParentBeaconBlockRoot)
 		if err != nil {
 			log.Printf("[ERROR] Error converting Deneb Request and Prof transactions to Block: %v", err)
 			return err
@@ -150,7 +215,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 		}
 
 		log.Printf("[INFO] Calling flashbots_validateProfBlock...")
-		var profValidationResp *bv.ProfSimResp
+		var profValidationResp *profValidationResponse
 		err = s.execClient.CallContext(context.Background(), &profValidationResp, "flashbots_validateProfBlock", params...)
 		if err != nil {
 			log.Printf("[ERROR] Error calling flashbots_validateProfBlock: %v", err)
