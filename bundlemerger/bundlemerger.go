@@ -156,6 +156,11 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 
 			log.Printf("[INFO] wallet chainID %+v", s.wallet.GetChainId())
 
+			// Set chainID to 17000
+			s.wallet.SetChainId(big.NewInt(17000))
+
+			log.Printf("[INFO] wallet updated chainID %+v", s.wallet.GetChainId())
+
 			// Set amount (in Gwei)
 			amount := uint256.NewInt(1000) // 1000 Gwei
 			amount = amount.Mul(amount, uint256.NewInt(1000000000))
