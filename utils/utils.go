@@ -9,6 +9,7 @@ import (
 
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"math/big"
 
 	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
@@ -482,6 +483,13 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.Exe
 }
 
 func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte, blobsBundle *denebapi.BlobsBundle, parentBeaconBlockRoot common.Hash) (*types.Block, error) {
+	// Add debug logging
+	log.Printf("[DEBUG] BlobsBundle nil? %v", blobsBundle == nil)
+	if blobsBundle != nil {
+		log.Printf("[DEBUG] Number of commitments: %d", len(blobsBundle.Commitments))
+		log.Printf("[DEBUG] Number of blobs: %d", len(blobsBundle.Blobs))
+	}
+
 	// Convert payload transactions to [][]byte
 	txs := make([][]byte, len(payload.Transactions)+len(profTxs))
 	for i, tx := range payload.Transactions {
@@ -513,9 +521,22 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 
 	// Calculate versioned hashes for blobs
 	versionedHashes := calculateVersionedHashes(blobsBundle)
+	log.Printf("[DEBUG] Number of versioned hashes calculated: %d", len(versionedHashes))
+
+	// Check for blob transactions
+	var blobTxCount int
+	for _, tx := range txs {
+		var decodedTx types.Transaction
+		if err := decodedTx.UnmarshalBinary(tx); err == nil {
+			if len(decodedTx.BlobHashes()) > 0 {
+				blobTxCount++
+			}
+		}
+	}
+	log.Printf("[DEBUG] Number of blob transactions found: %d", blobTxCount)
 
 	// Use the standard engine package function
-	return engine.ExecutableDataToBlock(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
+	return engine.ExecutableDataToBlockNoHash(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
 }
 
 // Helper function to convert withdrawals
@@ -534,6 +555,11 @@ func convertWithdrawals(withdrawals []*capella.Withdrawal) []*types.Withdrawal {
 
 // Helper function to calculate versioned hashes
 func calculateVersionedHashes(blobsBundle *denebapi.BlobsBundle) []common.Hash {
+
+	if blobsBundle == nil {
+		return []common.Hash{}
+	}
+
 	hasher := sha256.New()
 	versionedHashes := make([]common.Hash, len(blobsBundle.Commitments))
 	for i, commitment := range blobsBundle.Commitments {
