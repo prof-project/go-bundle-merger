@@ -35,7 +35,6 @@ type BundleMergerServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
 	WalletPrivKey string
-	ChainID       *big.Int
 }
 
 // BundleMergerServer implements the BundleMerger gRPC service
@@ -53,7 +52,7 @@ type profValidationResponse struct {
 }
 
 func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
-	// Initialize wallet
+	// Initialize wallet with chainID
 	wallet, err := txbuilder.NewWallet(opts.WalletPrivKey)
 	if err != nil {
 		log.Printf("[ERROR] Failed to initialize wallet: %v", err)
