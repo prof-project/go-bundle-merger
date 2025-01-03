@@ -163,7 +163,9 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			amount = amount.Mul(amount, uint256.NewInt(1000000000))
 
 			// Convert proposer fee recipient to common.Address
-			proposerAddr := common.BytesToAddress(denebRequest.BidTrace.ProposerFeeRecipient[:])
+			proposerAddr := common.BytesToAddress(req.BidTrace.ProposerFeeRecipient[:])
+
+			log.Printf("[INFO] proposerAddr %+v", proposerAddr)
 
 			// Create direct payment transaction data
 			txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
@@ -180,7 +182,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			}
 
 			// Build and sign the transaction
-			signedTx, err := s.wallet.BuildDynamicFeeTx(txData)
+			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, 0)
 			if err != nil {
 				log.Printf("[ERROR] Failed to build and sign transaction: %v", err)
 				return status.Errorf(codes.Internal, "Failed to build and sign transaction: %v", err)
@@ -217,6 +219,8 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			denebRequest.BidTrace.ProposerFeeRecipient,
 			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
+
+		log.Printf("[INFO] params passed to flashbots_validateProfBlock %+v", params)
 
 		log.Printf("[INFO] Calling flashbots_validateProfBlock...")
 		var profValidationResp *profValidationResponse
