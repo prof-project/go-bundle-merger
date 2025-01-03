@@ -37,7 +37,6 @@ type ServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
 	WalletPrivKey string
-	ChainID       *big.Int
 }
 
 // Server represents the bundle merger server.
