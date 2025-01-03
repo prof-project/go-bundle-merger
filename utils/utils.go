@@ -498,6 +498,10 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 	// Copy prof transactions
 	copy(txs[len(payload.Transactions):], profTxs)
 
+	// Calculate versioned hashes first
+	versionedHashes := calculateVersionedHashes(blobsBundle)
+	log.Printf("[DEBUG] Calculated versioned hashes: %v", versionedHashes)
+
 	// Create executable data
 	executableData := engine.ExecutableData{
 		ParentHash:    common.Hash(payload.ParentHash),
@@ -508,7 +512,7 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 		Random:        common.Hash(payload.PrevRandao),
 		Number:        payload.BlockNumber,
 		GasLimit:      payload.GasLimit,
-		GasUsed:       0, // Will be computed during execution
+		GasUsed:       payload.GasUsed, // Changed from 0 to actual GasUsed
 		Timestamp:     payload.Timestamp,
 		ExtraData:     payload.ExtraData,
 		BaseFeePerGas: payload.BaseFeePerGas.ToBig(),
@@ -519,23 +523,21 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 		ExcessBlobGas: &payload.ExcessBlobGas,
 	}
 
-	// Calculate versioned hashes for blobs
-	versionedHashes := calculateVersionedHashes(blobsBundle)
-	log.Printf("[DEBUG] Number of versioned hashes calculated: %d", len(versionedHashes))
-
-	// Check for blob transactions
+	// Check for blob transactions and log details
 	var blobTxCount int
 	for _, tx := range txs {
 		var decodedTx types.Transaction
 		if err := decodedTx.UnmarshalBinary(tx); err == nil {
 			if len(decodedTx.BlobHashes()) > 0 {
 				blobTxCount++
+				log.Printf("[DEBUG] Found blob transaction with hashes: %v", decodedTx.BlobHashes())
 			}
 		}
 	}
 	log.Printf("[DEBUG] Number of blob transactions found: %d", blobTxCount)
+	log.Printf("[DEBUG] Number of versioned hashes being passed: %d", len(versionedHashes))
 
-	// Use the standard engine package function
+	// Use ExecutableDataToBlock with versioned hashes
 	return engine.ExecutableDataToBlockNoHash(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
 }
 
@@ -555,17 +557,28 @@ func convertWithdrawals(withdrawals []*capella.Withdrawal) []*types.Withdrawal {
 
 // Helper function to calculate versioned hashes
 func calculateVersionedHashes(blobsBundle *denebapi.BlobsBundle) []common.Hash {
-
 	if blobsBundle == nil {
+		log.Printf("[DEBUG] BlobsBundle is nil, returning empty versioned hashes")
 		return []common.Hash{}
 	}
+
+	log.Printf("[DEBUG] Calculating versioned hashes for %d commitments", len(blobsBundle.Commitments))
 
 	hasher := sha256.New()
 	versionedHashes := make([]common.Hash, len(blobsBundle.Commitments))
 	for i, commitment := range blobsBundle.Commitments {
+		log.Printf("[DEBUG] Processing commitment %d: %x", i, commitment)
 		c := kzg4844.Commitment(commitment)
 		computed := kzg4844.CalcBlobHashV1(hasher, &c)
 		versionedHashes[i] = common.Hash(computed)
+		log.Printf("[DEBUG] Calculated versioned hash %d: 0x%x", i, versionedHashes[i])
+		hasher.Reset()
 	}
+
+	log.Printf("[DEBUG] Final versioned hashes: %v", versionedHashes)
+	for i, hash := range versionedHashes {
+		log.Printf("[DEBUG] Hash %d: 0x%x", i, hash)
+	}
+
 	return versionedHashes
 }
