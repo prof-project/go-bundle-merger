@@ -159,7 +159,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			log.Printf("[INFO] wallet updated chainID %+v", s.wallet.GetChainId())
 
 			// Set amount (in Gwei)
-			amount := uint256.NewInt(1000) // 1000 Gwei
+			amount := uint256.NewInt(1000000) // 1000 Gwei
 			amount = amount.Mul(amount, uint256.NewInt(1000000000))
 
 			// Convert proposer fee recipient to common.Address
@@ -214,7 +214,6 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			return err
 		}
 
-		// registeredGasLimit := profBlock.Header().GasLimit
 		params := []interface{}{
 			blockData,
 			denebRequest.BidTrace.ProposerFeeRecipient,
