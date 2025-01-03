@@ -166,7 +166,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 			amount = amount.Mul(amount, uint256.NewInt(1000000000))
 
 			// Convert proposer fee recipient to common.Address
-			proposerAddr := common.Address(denebRequest.BidTrace.ProposerFeeRecipient)
+			proposerAddr := common.BytesToAddress(denebRequest.BidTrace.ProposerFeeRecipient[:])
 
 			// Create direct payment transaction data
 			txData, err := txbuilder.DynFeeTx(&txbuilder.TxMetadata{
