@@ -522,7 +522,7 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 	versionedHashes := calculateVersionedHashes(blobsBundle)
 
 	// Use the standard engine package function
-	return engine.ExecutableDataToBlockNoHash(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
+	return engine.ExecutableDataToBlock(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
 }
 
 // Helper function to convert withdrawals
