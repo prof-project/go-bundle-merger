@@ -147,8 +147,11 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			log.Printf("[INFO] Fee recipient is not the same as the proposer fee recipient, adding tx to prof bundle")
 
 			// Set fee caps (in Gwei)
-			feeCap := new(big.Int).Mul(big.NewInt(150), big.NewInt(1000000000)) // 150 Gwei
-			tipCap := new(big.Int).Mul(big.NewInt(140), big.NewInt(1000000000)) // 140 Gwei
+			// new(big.Int).Mul(big.NewInt(int64(s.options.BaseFee)), big.NewInt(1000000000))
+			feeCap := new(big.Int).Mul(big.NewInt(int64(150)), big.NewInt(1000000000)) // 150 Gwei
+			tipCap := new(big.Int).Mul(big.NewInt(int64(140)), big.NewInt(1000000000)) // 140 Gwei
+
+			log.Printf("[INFO] wallet chainID %+v", s.wallet.GetChainId())
 
 			// Set amount (in Gwei)
 			amount := uint256.NewInt(1000) // 1000 Gwei
