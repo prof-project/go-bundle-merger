@@ -200,6 +200,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 
 			// Add the serialized transaction to prof bundle
 			profBundle = append(profBundle, serializedTx)
+			log.Printf("[INFO] profBundle %+v", profBundle)
 		}
 
 		// Convert Deneb Request and Prof transactions to Block
@@ -209,7 +210,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 			return err
 		}
 
-		// log.Printf("[INFO] PROF block before execution %+v", profBlock)
+		log.Printf("[INFO] PROF block before execution %+v", profBlock)
 
 		blockData, err := serializeBlock(profBlock)
 		if err != nil {
@@ -222,8 +223,6 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 			denebRequest.BidTrace.ProposerFeeRecipient,
 			denebRequest.PayloadBundle.ExecutionPayload.GasLimit,
 		}
-
-		log.Printf("[INFO] params passed to flashbots_validateProfBlock %+v", params)
 
 		log.Printf("[INFO] Calling flashbots_validateProfBlock...")
 		var profValidationResp *profValidationResponse
