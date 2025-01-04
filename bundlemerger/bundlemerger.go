@@ -247,6 +247,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 			log.Printf("[ERROR] FinalizedBlock is nil")
 			return status.Errorf(codes.Internal, "FinalizedBlock is nil")
 		}
+		log.Printf("[INFO] FinalizedBlock %+v", block)
 
 		// Check each method call separately
 		if number := block.Number(); number != nil {
