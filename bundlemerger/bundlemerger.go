@@ -187,6 +187,8 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 
 			// s.wallet.ResetPendingNonce(s.execClient)
 
+			log.Printf("[INFO] wallet nonce %+v", s.wallet.GetNonce())
+
 			// Build and sign the transation
 			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, s.wallet.GetNonce())
 			if err != nil {
