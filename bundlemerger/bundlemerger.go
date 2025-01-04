@@ -49,7 +49,7 @@ type BundleMergerServer struct {
 
 type profValidationResponse struct {
 	Value          *big.Int
-	FinalizedBlock *types.Block
+	FinalizedBlock string
 }
 
 func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
@@ -239,7 +239,19 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			return status.Errorf(codes.Internal, "profValidationResp is nil")
 		}
 
-		block := profValidationResp.FinalizedBlock
+		finalizedProfBlockBytes, err := hex.DecodeString(profValidationResp.FinalizedBlock)
+		if err != nil {
+			return err
+		}
+
+		// Deserialize the block using RLP decoding
+		var finalizedProfBlock *types.Block
+		err = rlp.DecodeBytes(finalizedProfBlockBytes, &finalizedProfBlock)
+		if err != nil {
+			return err
+		}
+
+		block := finalizedProfBlock
 		if block == nil {
 			log.Printf("[ERROR] FinalizedBlock is nil")
 			return status.Errorf(codes.Internal, "FinalizedBlock is nil")
@@ -307,7 +319,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 		log.Printf("[INFO] successfully created blobSidecars %+v", blobSidecars)
 
-		enrichedPayload := engine.BlockToExecutableData(profValidationResp.FinalizedBlock, profValidationResp.Value, blobSidecars, nil)
+		enrichedPayload := engine.BlockToExecutableData(finalizedProfBlock, profValidationResp.Value, blobSidecars, nil)
 
 		log.Printf("[INFO] successfully created enrichedPayload %+v", enrichedPayload)
 
