@@ -20,14 +20,11 @@ WORKDIR /app/cmd/server
 # Build the Go application (specify the main.go as the entry point)
 RUN go build -o /enclave-server main.go
 
-# Install upx
-RUN apk add --no-cache upx
-
-# Compress the compiled binary
-RUN upx -q -9 /enclave-server
+# Install upx and compress the compiled binary
+RUN apk add --no-cache upx && upx -q -9 /enclave-server
 
 # Final Stage
-FROM alpine:latest
+FROM alpine:3.21
 
 # Install curl
 RUN apk add --no-cache curl
@@ -38,6 +35,8 @@ COPY --from=builder /enclave-server /enclave-server
 # Expose the port your service listens on
 EXPOSE 80
 EXPOSE 50051
+
+HEALTHCHECK CMD curl --fail http://localhost:80/enhancer/health || exit 1
 
 # Set the entry point to run the server
 ENTRYPOINT ["/enclave-server"]
