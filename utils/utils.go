@@ -339,6 +339,102 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 	return protoBlobsBundle
 }
 
+// DenebBlobsBundleToSidecars converts a BlobsBundle to a slice of BlobTxSidecar
+func DenebBlobsBundleToSidecars(blobBundle *builderApiDeneb.BlobsBundle) []*types.BlobTxSidecar {
+	if blobBundle == nil {
+		return nil
+	}
+
+	blobSidecars := make([]*types.BlobTxSidecar, len(blobBundle.Blobs))
+	for i := range blobBundle.Blobs {
+		var blob kzg4844.Blob
+		var commitment kzg4844.Commitment
+		var proof kzg4844.Proof
+
+		copy(blob[:], blobBundle.Blobs[i][:])
+		copy(commitment[:], blobBundle.Commitments[i][:])
+		copy(proof[:], blobBundle.Proofs[i][:])
+
+		blobSidecars[i] = &types.BlobTxSidecar{
+			Blobs:       []kzg4844.Blob{blob},
+			Commitments: []kzg4844.Commitment{commitment},
+			Proofs:      []kzg4844.Proof{proof},
+		}
+	}
+
+	return blobSidecars
+}
+
+func GetDenebPayload(data *engine.ExecutionPayloadEnvelope) (*builderApiDeneb.ExecutionPayloadAndBlobsBundle, error) {
+	payload := data.ExecutionPayload
+	blobsBundle := data.BlobsBundle
+	baseFeePerGas, overflow := uint256.FromBig(payload.BaseFeePerGas)
+	if overflow {
+		return nil, fmt.Errorf("base fee per gas overflow")
+	}
+	transactions := make([]bellatrix.Transaction, len(payload.Transactions))
+	for i, tx := range payload.Transactions {
+		transactions[i] = bellatrix.Transaction(tx)
+	}
+	withdrawals := make([]*capella.Withdrawal, len(payload.Withdrawals))
+	for i, wd := range payload.Withdrawals {
+		withdrawals[i] = &capella.Withdrawal{
+			Index:          capella.WithdrawalIndex(wd.Index),
+			ValidatorIndex: phase0.ValidatorIndex(wd.Validator),
+			Address:        bellatrix.ExecutionAddress(wd.Address),
+			Amount:         phase0.Gwei(wd.Amount),
+		}
+	}
+	return &builderApiDeneb.ExecutionPayloadAndBlobsBundle{
+		ExecutionPayload: &deneb.ExecutionPayload{
+			ParentHash:    [32]byte(payload.ParentHash),
+			FeeRecipient:  [20]byte(payload.FeeRecipient),
+			StateRoot:     [32]byte(payload.StateRoot),
+			ReceiptsRoot:  [32]byte(payload.ReceiptsRoot),
+			LogsBloom:     types.BytesToBloom(payload.LogsBloom),
+			PrevRandao:    [32]byte(payload.Random),
+			BlockNumber:   payload.Number,
+			GasLimit:      payload.GasLimit,
+			GasUsed:       payload.GasUsed,
+			Timestamp:     payload.Timestamp,
+			ExtraData:     payload.ExtraData,
+			BaseFeePerGas: baseFeePerGas,
+			BlockHash:     [32]byte(payload.BlockHash),
+			Transactions:  transactions,
+			Withdrawals:   withdrawals,
+			BlobGasUsed:   *payload.BlobGasUsed,
+			ExcessBlobGas: *payload.ExcessBlobGas,
+		},
+		BlobsBundle: getBlobsBundle(blobsBundle),
+	}, nil
+}
+
+func getBlobsBundle(blobsBundle *engine.BlobsBundleV1) *builderApiDeneb.BlobsBundle {
+	commitments := make([]deneb.KZGCommitment, len(blobsBundle.Commitments))
+	proofs := make([]deneb.KZGProof, len(blobsBundle.Proofs))
+	blobs := make([]deneb.Blob, len(blobsBundle.Blobs))
+
+	// we assume the lengths for blobs bundle is validated beforehand to be the same
+	for i := range blobsBundle.Blobs {
+		var commitment deneb.KZGCommitment
+		copy(commitment[:], blobsBundle.Commitments[i][:])
+		commitments[i] = commitment
+
+		var proof deneb.KZGProof
+		copy(proof[:], blobsBundle.Proofs[i][:])
+		proofs[i] = proof
+
+		var blob deneb.Blob
+		copy(blob[:], blobsBundle.Blobs[i][:])
+		blobs[i] = blob
+	}
+	return &builderApiDeneb.BlobsBundle{
+		Commitments: commitments,
+		Proofs:      proofs,
+		Blobs:       blobs,
+	}
+}
+
 // HeaderToProtoHeader converts a header to a proto header.
 func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.ExecutionPayloadHeader {
 	if header == nil {
@@ -492,10 +588,13 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.Exe
 func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte, blobsBundle *denebapi.BlobsBundle, parentBeaconBlockRoot common.Hash) (*types.Block, error) {
 	// Add debug logging
 	log.Printf("[DEBUG] BlobsBundle nil? %v", blobsBundle == nil)
-	if blobsBundle != nil {
-		log.Printf("[DEBUG] Number of commitments: %d", len(blobsBundle.Commitments))
-		log.Printf("[DEBUG] Number of blobs: %d", len(blobsBundle.Blobs))
-	}
+
+	// TODO: remove this once we support blobs
+	// if blobsBundle != nil {
+	// 	log.Printf("[DEBUG] Number of commitments: %d", len(blobsBundle.Commitments))
+	// 	log.Printf("[DEBUG] Number of blobs: %d", len(blobsBundle.Blobs))
+	// 	return nil, fmt.Errorf("blob transactions are not yet supported (found transaction with %d blobs)", len(blobsBundle.Blobs))
+	// }
 
 	// Convert payload transactions to [][]byte
 	txs := make([][]byte, len(payload.Transactions)+len(profTxs))
@@ -519,7 +618,7 @@ func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte
 		Random:        common.Hash(payload.PrevRandao),
 		Number:        payload.BlockNumber,
 		GasLimit:      payload.GasLimit,
-		GasUsed:       payload.GasUsed, // Changed from 0 to actual GasUsed
+		GasUsed:       payload.GasUsed,
 		Timestamp:     payload.Timestamp,
 		ExtraData:     payload.ExtraData,
 		BaseFeePerGas: payload.BaseFeePerGas.ToBig(),

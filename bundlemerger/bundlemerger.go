@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
@@ -25,6 +25,7 @@ import (
 	apiv1deneb "github.com/attestantio/go-eth2-client/api/v1/deneb"
 	"github.com/attestantio/go-eth2-client/spec"
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
+	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethpandaops/spamoor/txbuilder"
 	fbutils "github.com/flashbots/go-boost-utils/utils"
 	"github.com/prof-project/go-bundle-merger/utils"
@@ -49,8 +50,8 @@ type Server struct {
 }
 
 type profValidationResponse struct {
-	Value            *uint256.Int
-	ExecutionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle
+	Value          *big.Int
+	FinalizedBlock *types.Block
 }
 
 // NewBundleMergerServerEth creates a new bundle merger server for Ethereum.
@@ -239,19 +240,44 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 
 		// log.Printf("[INFO] profValidationResp %+v", profValidationResp)
 
-		enrichedPayload := profValidationResp.ExecutionPayload
+		// Convert the blobs bundle to blob sidecars
+		blobSidecars := make([]*types.BlobTxSidecar, len(denebRequest.PayloadBundle.BlobsBundle.Blobs))
+		for i := range denebRequest.PayloadBundle.BlobsBundle.Blobs {
+			var blob kzg4844.Blob
+			var commitment kzg4844.Commitment
+			var proof kzg4844.Proof
+
+			copy(blob[:], denebRequest.PayloadBundle.BlobsBundle.Blobs[i][:])
+			copy(commitment[:], denebRequest.PayloadBundle.BlobsBundle.Commitments[i][:])
+			copy(proof[:], denebRequest.PayloadBundle.BlobsBundle.Proofs[i][:])
+
+			blobSidecars[i] = &types.BlobTxSidecar{
+				Blobs:       []kzg4844.Blob{blob},
+				Commitments: []kzg4844.Commitment{commitment},
+				Proofs:      []kzg4844.Proof{proof},
+			}
+		}
+
+		enrichedPayload := engine.BlockToExecutableData(profValidationResp.FinalizedBlock, profValidationResp.Value, blobSidecars, nil)
+
+		payload, err := utils.GetDenebPayload(enrichedPayload)
+		if err != nil {
+			log.Printf("[ERROR] Error getting Deneb payload: %v", err)
+			return status.Errorf(codes.Internal, "Error getting Deneb payload: %v", err)
+		}
+
 		if enrichedPayload == nil {
 			return status.Errorf(codes.Internal, "Execution payload is nil")
 		}
 		// log.Printf("[INFO] Step 1: Got enriched payload: %+v", enrichedPayload)
 
-		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(enrichedPayload.ExecutionPayload)
+		enrichedPayloadProto := utils.DenebPayloadToProtoPayload(payload.ExecutionPayload)
 		if enrichedPayloadProto == nil {
 			return status.Errorf(codes.Internal, "Failed to convert to proto payload")
 		}
 		// log.Printf("[INFO] Step 2: Converted to proto payload: %+v", enrichedPayloadProto)
 
-		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(enrichedPayload.BlobsBundle)
+		enrichedBlobProto := utils.DenebBlobsBundleToProtoBlobsBundle(payload.BlobsBundle)
 		// log.Printf("[INFO] Step 3: Converted blobs bundle: %+v", enrichedBlobProto)
 
 		// Instead of using req.Uuid as the key, use the block hash
@@ -274,7 +300,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 		enrichedPayloadHeader, err := fbutils.PayloadToPayloadHeader(
 			&builderApi.VersionedExecutionPayload{
 				Version: spec.DataVersionDeneb,
-				Deneb:   enrichedPayload.ExecutionPayload,
+				Deneb:   payload.ExecutionPayload,
 			},
 		)
 		if err != nil {
@@ -286,7 +312,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 		resp := &relay_grpc.EnrichBlockResponse{
 			Uuid:                   req.Uuid,
 			ExecutionPayloadHeader: utils.HeaderToProtoHeader(enrichedPayloadHeader.Deneb),
-			KzgCommitment:          utils.CommitmentsToProtoCommitments(enrichedPayload.BlobsBundle.Commitments),
+			KzgCommitment:          utils.CommitmentsToProtoCommitments(payload.BlobsBundle.Commitments),
 			Value:                  profValidationResp.Value.Uint64(),
 		}
 		log.Printf("[INFO] Step 7: Successfully created response")
