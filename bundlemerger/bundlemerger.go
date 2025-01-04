@@ -184,6 +184,8 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 
 			// s.wallet.ResetPendingNonce(s.execClient)
 
+			log.Printf("[INFO] wallet nonce %+v", s.wallet.GetNonce())
+
 			// Build and sign the transation
 			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, s.wallet.GetNonce())
 			if err != nil {
