@@ -182,7 +182,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 				return status.Errorf(codes.Internal, "Failed to create direct payment tx: %v", err)
 			}
 
-			// Build and sign the transaction
+			// Build and sign the transation
 			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, 0)
 			if err != nil {
 				log.Printf("[ERROR] Failed to build and sign transaction: %v", err)
@@ -230,38 +230,58 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 		}
 		log.Printf("[INFO] Successfully validated PROF block")
 
-		// Validate block and its required fields before calling BlockToExecutableData
-		if profValidationResp.FinalizedBlock == nil {
-			log.Printf("[ERROR] Finalized block of profValidationResp is nil")
-			return status.Errorf(codes.Internal, "Finalized block of profValidationResp is nil")
-		}
-
-		block := profValidationResp.FinalizedBlock
-		if block.Header() == nil {
-			log.Printf("[ERROR] Block header of profValidationResp is nil")
-			return status.Errorf(codes.Internal, "Block header of profValidationResp is nil")
-		}
-
-		// Check required header fields that BlockToExecutableData will access
-		if block.BaseFee() == nil {
-			log.Printf("[ERROR] Block base fee of profValidationResp is nil")
-			return status.Errorf(codes.Internal, "Block base fee of profValidationResp is nil")
-		}
-
-		// Check value conversion
-		if profValidationResp.Value == nil {
-			log.Printf("[ERROR] Block value of profValidationResp is nil")
-			return status.Errorf(codes.Internal, "Block value of profValidationResp is nil")
-		}
+		log.Printf("[INFO] profValidationResp %+v", profValidationResp)
 
 		// Log block details for debugging
 		log.Printf("[INFO] Block validation details:")
-		log.Printf("  Number: %d", block.NumberU64())
-		log.Printf("  Hash: %s", block.Hash().Hex())
-		log.Printf("  ParentHash: %s", block.ParentHash().Hex())
-		log.Printf("  Coinbase: %s", block.Coinbase().Hex())
-		log.Printf("  BaseFee: %s", block.BaseFee().String())
-		log.Printf("  Transactions: %d", len(block.Transactions()))
+		if profValidationResp == nil {
+			log.Printf("[ERROR] profValidationResp is nil")
+			return status.Errorf(codes.Internal, "profValidationResp is nil")
+		}
+
+		block := profValidationResp.FinalizedBlock
+		if block == nil {
+			log.Printf("[ERROR] FinalizedBlock is nil")
+			return status.Errorf(codes.Internal, "FinalizedBlock is nil")
+		}
+
+		// Check each method call separately
+		if number := block.Number(); number != nil {
+			log.Printf("  Number: %d", number.Uint64())
+		} else {
+			log.Printf("  Number: nil")
+		}
+
+		if hash := block.Hash(); (hash != common.Hash{}) {
+			log.Printf("  Hash: %s", hash.Hex())
+		} else {
+			log.Printf("  Hash: nil")
+		}
+
+		if parentHash := block.ParentHash(); (parentHash != common.Hash{}) {
+			log.Printf("  ParentHash: %s", parentHash.Hex())
+		} else {
+			log.Printf("  ParentHash: nil")
+		}
+
+		if coinbase := block.Coinbase(); (coinbase != common.Address{}) {
+			log.Printf("  Coinbase: %s", coinbase.Hex())
+		} else {
+			log.Printf("  Coinbase: nil")
+		}
+
+		if baseFee := block.BaseFee(); baseFee != nil {
+			log.Printf("  BaseFee: %s", baseFee.String())
+		} else {
+			log.Printf("  BaseFee: nil")
+		}
+
+		if txs := block.Transactions(); txs != nil {
+			log.Printf("  Transactions: %d", len(txs))
+		} else {
+			log.Printf("  Transactions: nil")
+		}
+
 		log.Printf("  Withdrawals: %v", block.Withdrawals() != nil)
 		log.Printf("  BlobGasUsed: %v", block.BlobGasUsed())
 		log.Printf("  ExcessBlobGas: %v", block.ExcessBlobGas())
