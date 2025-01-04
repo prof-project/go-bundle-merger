@@ -182,8 +182,10 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 				return status.Errorf(codes.Internal, "Failed to create direct payment tx: %v", err)
 			}
 
+			// s.wallet.ResetPendingNonce(s.execClient)
+
 			// Build and sign the transation
-			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, 0)
+			signedTx, err := s.wallet.ReplaceDynamicFeeTx(txData, s.wallet.GetNonce())
 			if err != nil {
 				log.Printf("[ERROR] Failed to build and sign transaction: %v", err)
 				return status.Errorf(codes.Internal, "Failed to build and sign transaction: %v", err)
