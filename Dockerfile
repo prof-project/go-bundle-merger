@@ -26,8 +26,11 @@ RUN apk add --no-cache upx && upx -q -9 /enclave-server
 # Final Stage
 FROM alpine:3.21
 
-# Install curl
-RUN apk add --no-cache curl
+# Install curl (healthcheck), create a user to run the service
+RUN apk add --no-cache curl && \
+    adduser -D -g '' appuser
+
+USER appuser
 
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
