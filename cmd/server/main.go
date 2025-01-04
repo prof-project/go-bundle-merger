@@ -11,6 +11,7 @@ import (
 
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethpandaops/spamoor/txbuilder"
 	"github.com/joho/godotenv"
 	"github.com/prof-project/go-bundle-merger/bundlemerger"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
@@ -58,8 +59,14 @@ func main() {
 	bundleServiceServer := bundlemerger.NewBundleServiceServer()
 	pb.RegisterBundleServiceServer(s, bundleServiceServer)
 
+	walletClient, err := txbuilder.NewClient(*builderURI)
+	if err != nil {
+		log.Fatalf("Failed to initialize wallet client: %v", err)
+	}
+
 	opts := bundlemerger.ServerOpts{
 		ExecClient:    execClient,
+		WalletClient:  walletClient,
 		BundleService: bundleServiceServer,
 		WalletPrivKey: walletPrivKey,
 	}
