@@ -233,12 +233,41 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 		}
 		log.Printf("[INFO] Successfully validated PROF block")
 
-		// profValidationResp, err := s.profapi.ValidateProfBlock(block, common.Address(denebRequest.BidTrace.ProposerFeeRecipient), 0 /* TODO: suitable gaslimit?*/)
-		// if err != nil {
-		// 	return err
-		// }
+		// Validate block and its required fields before calling BlockToExecutableData
+		if profValidationResp.FinalizedBlock == nil {
+			log.Printf("[ERROR] Finalized block of profValidationResp is nil")
+			return status.Errorf(codes.Internal, "Finalized block of profValidationResp is nil")
+		}
 
-		// log.Printf("[INFO] profValidationResp %+v", profValidationResp)
+		block := profValidationResp.FinalizedBlock
+		if block.Header() == nil {
+			log.Printf("[ERROR] Block header of profValidationResp is nil")
+			return status.Errorf(codes.Internal, "Block header of profValidationResp is nil")
+		}
+
+		// Check required header fields that BlockToExecutableData will access
+		if block.BaseFee() == nil {
+			log.Printf("[ERROR] Block base fee of profValidationResp is nil")
+			return status.Errorf(codes.Internal, "Block base fee of profValidationResp is nil")
+		}
+
+		// Check value conversion
+		if profValidationResp.Value == nil {
+			log.Printf("[ERROR] Block value of profValidationResp is nil")
+			return status.Errorf(codes.Internal, "Block value of profValidationResp is nil")
+		}
+
+		// Log block details for debugging
+		log.Printf("[INFO] Block validation details:")
+		log.Printf("  Number: %d", block.NumberU64())
+		log.Printf("  Hash: %s", block.Hash().Hex())
+		log.Printf("  ParentHash: %s", block.ParentHash().Hex())
+		log.Printf("  Coinbase: %s", block.Coinbase().Hex())
+		log.Printf("  BaseFee: %s", block.BaseFee().String())
+		log.Printf("  Transactions: %d", len(block.Transactions()))
+		log.Printf("  Withdrawals: %v", block.Withdrawals() != nil)
+		log.Printf("  BlobGasUsed: %v", block.BlobGasUsed())
+		log.Printf("  ExcessBlobGas: %v", block.ExcessBlobGas())
 
 		// Convert the blobs bundle to blob sidecars
 		blobSidecars := make([]*types.BlobTxSidecar, len(denebRequest.PayloadBundle.BlobsBundle.Blobs))
@@ -258,7 +287,11 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 			}
 		}
 
+		log.Printf("[INFO] successfully created blobSidecars %+v", blobSidecars)
+
 		enrichedPayload := engine.BlockToExecutableData(profValidationResp.FinalizedBlock, profValidationResp.Value, blobSidecars, nil)
+
+		log.Printf("[INFO] successfully created enrichedPayload %+v", enrichedPayload)
 
 		payload, err := utils.GetDenebPayload(enrichedPayload)
 		if err != nil {
