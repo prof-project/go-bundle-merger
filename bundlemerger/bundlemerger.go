@@ -1,3 +1,4 @@
+// Package bundlemerger provides functionality for merging and enriching payloads.
 package bundlemerger
 
 import (
@@ -29,12 +30,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// BundleMergerServerOpts represents options for the bundle merger server.
 type BundleMergerServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
 }
 
-// BundleMergerServer implements the BundleMerger gRPC service
+// BundleMergerServer represents the bundle merger server.
 type BundleMergerServer struct {
 	relay_grpc.UnimplementedEnricherServer
 	pool                *TxBundlePool
@@ -42,6 +44,7 @@ type BundleMergerServer struct {
 	execClient          *rpc.Client
 }
 
+// NewBundleMergerServerEth creates a new bundle merger server for Ethereum.
 func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
 	return &BundleMergerServer{
 		pool:                opts.BundleService.txBundlePool,
@@ -59,7 +62,7 @@ func serializeBlock(block *types.Block) (string, error) {
 	return hex.EncodeToString(buf.Bytes()), nil
 }
 
-// EnrichBlock implements the EnrichBlock RPC method as a bidirectional streaming RPC
+// EnrichBlockStream implements the EnrichBlock RPC method as a bidirectional streaming RPC
 func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamServer) error {
 	log.Printf("[INFO] Starting new EnrichBlockStream connection")
 
@@ -278,9 +281,9 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 	return profBundles, nil
 }
 
-// TODO - Once payload is fetched, there is yet no marking for deletion --> To be added
+// GetEnrichedPayload retrieves an enriched payload.
 func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
-
+	// TODO: - Once payload is fetched, there is yet no marking for deletion --> To be added
 	log.Printf("[INFO] CALLED ENRICH PAYLOAD")
 	// Deserialize the blinded beacon block
 	var blindedBlock apiv1deneb.BlindedBeaconBlock

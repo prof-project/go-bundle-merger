@@ -1,3 +1,4 @@
+// Package utils provides utility functions for the bundle merger.
 package utils
 
 import (
@@ -12,13 +13,14 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/deneb"
 	consensus "github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
-	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 )
 
+// ExecutionPayloadToProtoEnrichBlockRequest converts an execution payload to a proto enrich block request.
 func ExecutionPayloadToProtoEnrichBlockRequest(uuid string,
 	executionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle,
 	bidTrace v1.BidTrace, parentBeaconRoot phase0.Root) relay_grpc.EnrichBlockRequest {
@@ -44,6 +46,7 @@ func ExecutionPayloadToProtoEnrichBlockRequest(uuid string,
 	}
 }
 
+// ExecutionPayloadToProtoExecutionPayloadAndBlobsBundle converts an execution payload to a proto execution payload and blobs bundle.
 func ExecutionPayloadToProtoExecutionPayloadAndBlobsBundle(executionPayload *builderApiDeneb.ExecutionPayloadAndBlobsBundle) *relay_grpc.ExecutionPayloadAndBlobsBundle {
 	transactions := make([]*relay_grpc.Transaction, len(executionPayload.ExecutionPayload.Transactions))
 	for i, tx := range executionPayload.ExecutionPayload.Transactions {
@@ -109,13 +112,15 @@ func convertBlobBundleToProto(blobBundle *builderApiDeneb.BlobsBundle) *relay_gr
 	return protoBlobsBundle
 }
 
+// DenebEnrichBlockRequest represents a request to enrich a block in Deneb.
 type DenebEnrichBlockRequest struct {
-	Uuid                  string
+	UUID                  string
 	PayloadBundle         *builderApiDeneb.ExecutionPayloadAndBlobsBundle
 	BidTrace              *builderApiV1.BidTrace
 	ParentBeaconBlockRoot common.Hash
 }
 
+// ExecutableDataToExecutionPayloadV3 converts executable data to an execution payload V3.
 func ExecutableDataToExecutionPayloadV3(data *engine.ExecutableData) (*deneb.ExecutionPayload, error) {
 	transactionData := make([]bellatrix.Transaction, len(data.Transactions))
 	for i, tx := range data.Transactions {
@@ -153,7 +158,7 @@ func ExecutableDataToExecutionPayloadV3(data *engine.ExecutableData) (*deneb.Exe
 	}, nil
 }
 
-// Converts a DenebEnrichBlockRequest to a relay_grpc.EnrichBlockRequest.
+// DenebRequestToProtoRequest converts a Deneb request to a proto request.
 func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*relay_grpc.EnrichBlockRequest, error) {
 	transactions := make([]*relay_grpc.Transaction, len(request.PayloadBundle.ExecutionPayload.Transactions))
 	for i, tx := range request.PayloadBundle.ExecutionPayload.Transactions {
@@ -173,7 +178,7 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*relay_grpc.E
 	}
 
 	return &relay_grpc.EnrichBlockRequest{
-		Uuid: request.Uuid,
+		Uuid: request.UUID,
 		ExecutionPayloadAndBlobsBundle: &relay_grpc.ExecutionPayloadAndBlobsBundle{
 			ExecutionPayload: &relay_grpc.ExecutionPayloadUncompressed{
 				ParentHash:    request.PayloadBundle.ExecutionPayload.ParentHash[:],
@@ -211,7 +216,7 @@ func DenebRequestToProtoRequest(request *DenebEnrichBlockRequest) (*relay_grpc.E
 	}, nil
 }
 
-// Converts a relay_grpc.EnrichBlockRequest to a DenebEnrichBlockRequest.
+// ProtoRequestToDenebRequest converts a proto request to a Deneb request.
 func ProtoRequestToDenebRequest(request *relay_grpc.EnrichBlockRequest) (*DenebEnrichBlockRequest, error) {
 	// Add initial nil checks
 	if request == nil {
@@ -267,7 +272,7 @@ func ProtoRequestToDenebRequest(request *relay_grpc.EnrichBlockRequest) (*DenebE
 	}
 
 	return &DenebEnrichBlockRequest{
-		Uuid: request.Uuid,
+		UUID: request.Uuid,
 		PayloadBundle: &builderApiDeneb.ExecutionPayloadAndBlobsBundle{
 			ExecutionPayload: &deneb.ExecutionPayload{
 				ParentHash:    b32(request.ExecutionPayloadAndBlobsBundle.ExecutionPayload.ParentHash),
@@ -305,6 +310,7 @@ func ProtoRequestToDenebRequest(request *relay_grpc.EnrichBlockRequest) (*DenebE
 	}, nil
 }
 
+// DenebBlobsBundleToProtoBlobsBundle converts a Deneb blobs bundle to a proto blobs bundle.
 func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle) *relay_grpc.BlobsBundle {
 	protoBlobsBundle := &relay_grpc.BlobsBundle{
 		Commitments: make([][]byte, len(blobBundle.Commitments)),
@@ -327,34 +333,34 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 	return protoBlobsBundle
 }
 
-// TODO: implement
+// HeaderToProtoHeader converts a header to a proto header.
 func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.ExecutionPayloadHeader {
 	if header == nil {
 		return &relay_grpc.ExecutionPayloadHeader{}
 	}
-	
+
 	return &relay_grpc.ExecutionPayloadHeader{
 		ParentHash:       header.ParentHash[:],
-		FeeRecipient:    header.FeeRecipient[:],
-		StateRoot:       header.StateRoot[:],
-		ReceiptsRoot:    header.ReceiptsRoot[:],
-		LogsBloom:       header.LogsBloom[:],
-		PrevRandao:      header.PrevRandao[:],
-		BlockNumber:     header.BlockNumber,
-		GasLimit:        header.GasLimit,
-		GasUsed:         header.GasUsed,
-		Timestamp:       header.Timestamp,
-		ExtraData:       header.ExtraData,
-		BaseFeePerGas:   uint256ToIntToByteSlice(header.BaseFeePerGas),
-		BlockHash:       header.BlockHash[:],
+		FeeRecipient:     header.FeeRecipient[:],
+		StateRoot:        header.StateRoot[:],
+		ReceiptsRoot:     header.ReceiptsRoot[:],
+		LogsBloom:        header.LogsBloom[:],
+		PrevRandao:       header.PrevRandao[:],
+		BlockNumber:      header.BlockNumber,
+		GasLimit:         header.GasLimit,
+		GasUsed:          header.GasUsed,
+		Timestamp:        header.Timestamp,
+		ExtraData:        header.ExtraData,
+		BaseFeePerGas:    uint256ToIntToByteSlice(header.BaseFeePerGas),
+		BlockHash:        header.BlockHash[:],
 		TransactionsRoot: header.TransactionsRoot[:],
-		WithdrawalsRoot: header.WithdrawalsRoot[:],
-		BlobGasUsed:    header.BlobGasUsed,
-		ExcessBlobGas:  header.ExcessBlobGas,
+		WithdrawalsRoot:  header.WithdrawalsRoot[:],
+		BlobGasUsed:      header.BlobGasUsed,
+		ExcessBlobGas:    header.ExcessBlobGas,
 	}
 }
 
-// Convert KZG commitments to proto format
+// CommitmentsToProtoCommitments converts commitments to proto commitments.
 func CommitmentsToProtoCommitments(commitments []deneb.KZGCommitment) [][]byte {
 	if len(commitments) == 0 {
 		return [][]byte{}

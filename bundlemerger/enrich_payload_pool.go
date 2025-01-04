@@ -1,3 +1,4 @@
+// Package bundlemerger provides functionality for merging and enriching payloads.
 package bundlemerger
 
 import (
@@ -7,6 +8,7 @@ import (
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 )
 
+// EnrichedPayload represents a payload with additional metadata.
 type EnrichedPayload struct {
 	UUID              string
 	Payload           *relay_grpc.ExecutionPayloadAndBlobsBundle
@@ -14,12 +16,14 @@ type EnrichedPayload struct {
 	MarkedForDeletion bool
 }
 
+// EnrichedPayloadPool manages a pool of enriched payloads.
 type EnrichedPayloadPool struct {
 	payloads        map[string]*EnrichedPayload
 	mu              sync.RWMutex
 	cleanupInterval time.Duration
 }
 
+// NewEnrichedPayloadPool creates a new EnrichedPayloadPool.
 func NewEnrichedPayloadPool(cleanupInterval time.Duration) *EnrichedPayloadPool {
 	pool := &EnrichedPayloadPool{
 		payloads:        make(map[string]*EnrichedPayload),
@@ -29,12 +33,14 @@ func NewEnrichedPayloadPool(cleanupInterval time.Duration) *EnrichedPayloadPool 
 	return pool
 }
 
+// Add adds a new enriched payload to the pool.
 func (p *EnrichedPayloadPool) Add(payload *EnrichedPayload) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.payloads[payload.UUID] = payload
 }
 
+// Get retrieves an enriched payload from the pool.
 func (p *EnrichedPayloadPool) Get(uuid string) (*EnrichedPayload, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -45,6 +51,7 @@ func (p *EnrichedPayloadPool) Get(uuid string) (*EnrichedPayload, bool) {
 	return payload, true
 }
 
+// MarkForDeletion marks an enriched payload for deletion.
 func (p *EnrichedPayloadPool) MarkForDeletion(uuid string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -1,3 +1,4 @@
+// Package main provides the main entry point for the server.
 package main
 
 import (
@@ -7,10 +8,10 @@ import (
 	"net"
 	"net/http"
 
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/prof-project/go-bundle-merger/bundlemerger"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
-	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -62,7 +63,7 @@ func main() {
 
 // Start a simple HTTP server for health checks
 func startHealthCheck() {
-	http.HandleFunc("/enhancer/health", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/enhancer/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("{\"status\": \"healthy\"}"))
 	})

@@ -1,3 +1,4 @@
+// Package bundlemerger provides functionality for merging and enriching payloads.
 package bundlemerger
 
 import (
@@ -11,13 +12,13 @@ import (
 	pb "github.com/prof-project/prof-grpc/go/profpb"
 )
 
-// Sequencer API
+// BundleServiceServer provides gRPC server methods for bundle services.
 type BundleServiceServer struct {
 	pb.UnimplementedBundleServiceServer
 	txBundlePool *TxBundlePool
 }
 
-// Initialize the BundleServiceServer with a TxBundlePool
+// NewBundleServiceServer creates a new BundleServiceServer.
 func NewBundleServiceServer() *BundleServiceServer {
 	txBundlePool := &TxBundlePool{
 		bundles:    []*TxBundle{},
@@ -29,8 +30,8 @@ func NewBundleServiceServer() *BundleServiceServer {
 	return &BundleServiceServer{txBundlePool: txBundlePool}
 }
 
-// Implement the StreamBundleCollections rpc of the BundleService service
-func (s *BundleServiceServer) SendBundleCollections(ctx context.Context, req *pb.BundlesRequest) (*pb.BundlesResponse, error) {
+// SendBundleCollections sends bundle collections to the server.
+func (s *BundleServiceServer) SendBundleCollections(_ context.Context, req *pb.BundlesRequest) (*pb.BundlesResponse, error) {
 	log.Printf("> Received %d bundles", len(req.Bundles))
 
 	// Prepare to collect responses for each bundle
@@ -70,7 +71,7 @@ func (s *BundleServiceServer) SendBundleCollections(ctx context.Context, req *pb
 			MinTimestamp:      bundle.MinTimestamp,
 			MaxTimestamp:      bundle.MaxTimestamp,
 			RevertingTxHashes: bundle.RevertingTxHashes,
-			ReplacementUuid:   bundle.ReplacementUuid,
+			ReplacementUUID:   bundle.ReplacementUuid,
 			Builders:          bundle.Builders,
 		}
 
@@ -158,7 +159,7 @@ func (s *BundleServiceServer) SendBundleCollections(ctx context.Context, req *pb
 		}
 
 		// ToDo: mark for deletion after merging
-		// err = s.txBundlePool.cancelBundleByUuid(bundle.ReplacementUuid)
+		// err = s.txBundlePool.cancelBundleByUUID(bundle.ReplacementUuid)
 		// if err != nil {
 		// 	// ToDo: Handle error
 		// }

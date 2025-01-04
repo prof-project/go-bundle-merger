@@ -1,3 +1,4 @@
+// Package main provides a mock client for testing purposes.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -32,7 +34,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/prof-project/go-bundle-merger/utils"
-	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"google.golang.org/grpc"
 )
 
