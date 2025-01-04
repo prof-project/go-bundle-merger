@@ -282,7 +282,7 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 }
 
 // GetEnrichedPayload retrieves an enriched payload.
-func (s *BundleMergerServer) GetEnrichedPayload(ctx context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
+func (s *BundleMergerServer) GetEnrichedPayload(_ context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
 	// TODO: - Once payload is fetched, there is yet no marking for deletion --> To be added
 	log.Printf("[INFO] CALLED ENRICH PAYLOAD")
 	// Deserialize the blinded beacon block

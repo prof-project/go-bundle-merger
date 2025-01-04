@@ -441,6 +441,7 @@ func byteSliceToUint256Int(b []byte) *uint256.Int {
 	return u256
 }
 
+// DenebPayloadToProtoPayload converts a Deneb payload to a Proto payload.
 func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.ExecutionPayloadUncompressed {
 	transactions := make([]*relay_grpc.Transaction, len(payload.Transactions))
 	for i, tx := range payload.Transactions {
