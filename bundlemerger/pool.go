@@ -58,8 +58,11 @@ func (p *TxBundlePool) addBundle(bundle *TxBundle, replace bool) error {
 				return fmt.Errorf("bundle with UUID %s already exists", bundle.ReplacementUuid)
 			}
 
-			// If replace is true and the existing bundle isn't marked for deletion, replace the existing bundle
-			log.Printf("Replacing existing bundle with UUID: %s", bundle.ReplacementUuid)
+			// Optional logging
+			if false {
+				// If replace is true and the existing bundle isn't marked for deletion, replace the existing bundle
+				log.Printf("Replacing existing bundle with UUID: %s", bundle.ReplacementUuid)
+			}
 
 			// Remove the existing bundle from the list
 			for i, b := range p.bundles {
@@ -82,9 +85,9 @@ func (p *TxBundlePool) addBundle(bundle *TxBundle, replace bool) error {
 }
 
 func (p *TxBundlePool) sortPool() {
-    sort.SliceStable(p.bundles, func(i, j int) bool {
-        return p.customSort(p.bundles[i], p.bundles[j])
-    })
+	sort.SliceStable(p.bundles, func(i, j int) bool {
+		return p.customSort(p.bundles[i], p.bundles[j])
+	})
 }
 
 // // sorting policies
@@ -198,25 +201,25 @@ func (p *TxBundlePool) cleanupMarkedBundles() {
 }
 
 func (p *TxBundlePool) getBundlesForProcessing(limit int, markForDeletion bool) []*TxBundle {
-    p.mu.Lock()
-    defer p.mu.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-    var selectedBundles []*TxBundle
-    for _, bundle := range p.bundles {
-        if !bundle.MarkedForDeletion {
-            selectedBundles = append(selectedBundles, bundle)
-            if len(bundle.Txs) > 0 {
-                log.Printf("Selected bundle with nonce: %d", bundle.Txs[0].Nonce())
-            }
-            if markForDeletion {
-                bundle.MarkedForDeletion = true
-            }
-            if len(selectedBundles) >= limit {
-                break
-            }
-        }
-    }
-    return selectedBundles
+	var selectedBundles []*TxBundle
+	for _, bundle := range p.bundles {
+		if !bundle.MarkedForDeletion {
+			selectedBundles = append(selectedBundles, bundle)
+			if len(bundle.Txs) > 0 {
+				log.Printf("Selected bundle with nonce: %d", bundle.Txs[0].Nonce())
+			}
+			if markForDeletion {
+				bundle.MarkedForDeletion = true
+			}
+			if len(selectedBundles) >= limit {
+				break
+			}
+		}
+	}
+	return selectedBundles
 }
 
 func (p *TxBundlePool) startCleanupJob(interval time.Duration) {

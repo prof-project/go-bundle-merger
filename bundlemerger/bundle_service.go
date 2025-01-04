@@ -58,8 +58,6 @@ func (s *BundleServiceServer) SendBundleCollections(ctx context.Context, req *pb
 			}
 		}
 
-		log.Printf("Processing bundle %d with %d transactions", i+1, len(bundle.Transactions))
-
 		// Optional logging
 		if false {
 			log.Printf("Bundle BlockNumber: %s, MinTimestamp: %d, MaxTimestamp: %d", bundle.BlockNumber, bundle.MinTimestamp, bundle.MaxTimestamp)
