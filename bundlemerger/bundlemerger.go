@@ -38,6 +38,7 @@ type ServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
 	WalletPrivKey string
+	WalletClient  *txbuilder.Client
 }
 
 // Server represents the bundle merger server.
@@ -47,6 +48,7 @@ type Server struct {
 	enrichedPayloadPool *EnrichedPayloadPool
 	execClient          *rpc.Client
 	wallet              *txbuilder.Wallet
+	walletClient        *txbuilder.Client
 }
 
 type profValidationResponse struct {
@@ -67,6 +69,7 @@ func NewBundleMergerServerEth(opts ServerOpts) *Server {
 		pool:                opts.BundleService.txBundlePool,
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute),
 		execClient:          opts.ExecClient,
+		walletClient:        opts.WalletClient,
 		wallet:              wallet,
 	}
 }
@@ -185,8 +188,7 @@ func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamS
 				return status.Errorf(codes.Internal, "Failed to create direct payment tx: %v", err)
 			}
 
-			// s.wallet.ResetPendingNonce(s.execClient)
-
+			s.wallet.ResetPendingNonce(s.walletClient)
 			log.Printf("[INFO] wallet nonce %+v", s.wallet.GetNonce())
 
 			// Build and sign the transation
