@@ -244,6 +244,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 			log.Printf("[ERROR] FinalizedBlock is nil")
 			return status.Errorf(codes.Internal, "FinalizedBlock is nil")
 		}
+		log.Printf("[INFO] FinalizedBlock %+v", block)
 
 		// Check each method call separately
 		if number := block.Number(); number != nil {
