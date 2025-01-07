@@ -17,8 +17,12 @@ COPY . .
 # Set the working directory to the server directory
 WORKDIR /app/cmd/server
 
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH CGO_ENABLED=0 go build -o /enclave-server main.go
+
 # Build the Go application (specify the main.go as the entry point)
-RUN go build -o /enclave-server main.go
+#RUN go build -o /enclave-server main.go
 
 # Install upx and compress the compiled binary
 RUN apk add --no-cache upx && upx -q -9 /enclave-server
