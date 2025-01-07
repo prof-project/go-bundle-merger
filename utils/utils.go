@@ -365,6 +365,7 @@ func DenebBlobsBundleToSidecars(blobBundle *builderApiDeneb.BlobsBundle) []*type
 	return blobSidecars
 }
 
+// GetDenebPayload retrieves the Deneb payload from the given execution payload envelope.
 func GetDenebPayload(data *engine.ExecutionPayloadEnvelope) (*builderApiDeneb.ExecutionPayloadAndBlobsBundle, error) {
 	payload := data.ExecutionPayload
 	blobsBundle := data.BlobsBundle
@@ -585,6 +586,7 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.Exe
 	return protoPayload
 }
 
+// ExecutionPayloadV3ToBlock converts an execution payload V3 to a block.
 func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte, blobsBundle *denebapi.BlobsBundle, parentBeaconBlockRoot common.Hash) (*types.Block, error) {
 	// Add debug logging
 	log.Printf("[DEBUG] BlobsBundle nil? %v", blobsBundle == nil)
