@@ -30,14 +30,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// BundleMergerServerOpts represents options for the bundle merger server.
-type BundleMergerServerOpts struct {
+// ServerOpts represents options for the bundle merger server.
+type ServerOpts struct {
 	BundleService *BundleServiceServer
 	ExecClient    *rpc.Client
 }
 
-// BundleMergerServer represents the bundle merger server.
-type BundleMergerServer struct {
+// Server represents the bundle merger server.
+type Server struct {
 	relay_grpc.UnimplementedEnricherServer
 	pool                *TxBundlePool
 	enrichedPayloadPool *EnrichedPayloadPool
@@ -45,8 +45,8 @@ type BundleMergerServer struct {
 }
 
 // NewBundleMergerServerEth creates a new bundle merger server for Ethereum.
-func NewBundleMergerServerEth(opts BundleMergerServerOpts) *BundleMergerServer {
-	return &BundleMergerServer{
+func NewBundleMergerServerEth(opts ServerOpts) *Server {
+	return &Server{
 		pool:                opts.BundleService.txBundlePool,
 		enrichedPayloadPool: NewEnrichedPayloadPool(10 * time.Minute), // Cleanup interval of 10 minutes
 		execClient:          opts.ExecClient,
@@ -63,7 +63,7 @@ func serializeBlock(block *types.Block) (string, error) {
 }
 
 // EnrichBlockStream implements the EnrichBlock RPC method as a bidirectional streaming RPC
-func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamServer) error {
+func (s *Server) EnrichBlockStream(stream relay_grpc.Enricher_EnrichBlockStreamServer) error {
 	log.Printf("[INFO] Starting new EnrichBlockStream connection")
 
 	for {
@@ -238,7 +238,7 @@ func (s *BundleMergerServer) EnrichBlockStream(stream relay_grpc.Enricher_Enrich
 	}
 }
 
-func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
+func (s *Server) getProfBundle() ([][]byte, error) {
 	// TODO: Change limit, currently set to 10 for testing purposes
 	const bundleLimit = 20
 
@@ -282,7 +282,7 @@ func (s *BundleMergerServer) getProfBundle() ([][]byte, error) {
 }
 
 // GetEnrichedPayload retrieves an enriched payload.
-func (s *BundleMergerServer) GetEnrichedPayload(_ context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
+func (s *Server) GetEnrichedPayload(_ context.Context, req *relay_grpc.GetEnrichedPayloadRequest) (*relay_grpc.ExecutionPayloadAndBlobsBundle, error) {
 	// TODO: - Once payload is fetched, there is yet no marking for deletion --> To be added
 	log.Printf("[INFO] CALLED ENRICH PAYLOAD")
 	// Deserialize the blinded beacon block

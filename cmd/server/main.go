@@ -44,7 +44,7 @@ func main() {
 	bundleServiceServer := bundlemerger.NewBundleServiceServer()
 	pb.RegisterBundleServiceServer(s, bundleServiceServer)
 
-	opts := bundlemerger.BundleMergerServerOpts{
+	opts := bundlemerger.ServerOpts{
 		ExecClient:    execClient,
 		BundleService: bundleServiceServer,
 	}

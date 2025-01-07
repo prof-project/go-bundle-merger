@@ -85,7 +85,7 @@ func TestEnrichBlock(t *testing.T) {
 
 	// Create a new BundleMergerServer with the required options
 	bundleService := NewBundleServiceServer()
-	server := NewBundleMergerServerEth(BundleMergerServerOpts{
+	server := NewBundleMergerServerEth(ServerOpts{
 		BundleService: bundleService,
 		ExecClient:    clientEth,
 	})
@@ -351,7 +351,7 @@ func startEthService(t *testing.T, genesis *core.Genesis, blocks []*types.Block)
 	return n, ethservice
 }
 
-func assembleBlock(_ *BundleMergerServer, ethservice *eth.Ethereum, parentHash common.Hash, params *engine.PayloadAttributes) (*engine.ExecutableData, error) {
+func assembleBlock(_ *Server, ethservice *eth.Ethereum, parentHash common.Hash, params *engine.PayloadAttributes) (*engine.ExecutableData, error) {
 	args := &miner.BuildPayloadArgs{
 		Parent:       parentHash,
 		Timestamp:    params.Timestamp,
@@ -391,7 +391,7 @@ func TestGetEnrichedPayload(t *testing.T) {
 	require.NoError(t, err)
 
 	bundleService := NewBundleServiceServer()
-	server := NewBundleMergerServerEth(BundleMergerServerOpts{
+	server := NewBundleMergerServerEth(ServerOpts{
 		BundleService: bundleService,
 		ExecClient:    clientEth,
 	})
