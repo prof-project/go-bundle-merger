@@ -7,8 +7,10 @@ build:
 
 rebuild: build
 
+BUILDER_URI ?= $(shell cat .env | grep BUILDER_URI | cut -d '=' -f2)
+
 run:
-	$(MAKE) -C cmd/ _run
+	$(MAKE) -C cmd/ _run ARGS="--builder-uri=$(BUILDER_URI)"
 
 docker-build:
 	docker build -t prof-project/prof-merger .

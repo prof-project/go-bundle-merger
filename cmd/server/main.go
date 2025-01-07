@@ -7,9 +7,12 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 
 	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethpandaops/spamoor/txbuilder"
+	"github.com/joho/godotenv"
 	"github.com/prof-project/go-bundle-merger/bundlemerger"
 	pb "github.com/prof-project/prof-grpc/go/profpb"
 	"golang.org/x/net/context"
@@ -21,11 +24,23 @@ const (
 )
 
 func main() {
+
+	// Load .env file from project root
+	if err := godotenv.Load("../../.env"); err != nil {
+		log.Printf("Warning: .env file not found: %v", err)
+	}
+
 	builderURI := flag.String("builder-uri", "", "URI for the execution layer/builder")
 	flag.Parse()
 
 	if *builderURI == "" {
 		log.Fatal("--builder-uri flag is required")
+	}
+
+	// Read wallet configuration from environment
+	walletPrivKey := os.Getenv("WALLET_PRIVATE_KEY")
+	if walletPrivKey == "" {
+		log.Fatal("WALLET_PRIVATE_KEY environment variable is required")
 	}
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -44,15 +59,25 @@ func main() {
 	bundleServiceServer := bundlemerger.NewBundleServiceServer()
 	pb.RegisterBundleServiceServer(s, bundleServiceServer)
 
+	walletClient, err := txbuilder.NewClient(*builderURI)
+	if err != nil {
+		log.Fatalf("Failed to initialize wallet client: %v", err)
+	}
+
 	opts := bundlemerger.ServerOpts{
 		ExecClient:    execClient,
+		WalletClient:  walletClient,
 		BundleService: bundleServiceServer,
+		WalletPrivKey: walletPrivKey,
 	}
 
 	// Start health check endpoint
 	go startHealthCheck()
 
 	bundleMergerServer := bundlemerger.NewBundleMergerServerEth(opts)
+	if bundleMergerServer == nil {
+		log.Fatal("Failed to initialize bundle merger server")
+	}
 	relay_grpc.RegisterEnricherServer(s, bundleMergerServer)
 
 	log.Printf("Server listening on port %d", port)
