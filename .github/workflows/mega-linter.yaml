@@ -1,0 +1,56 @@
+---
+  # MegaLinter GitHub Action configuration file
+  # More info at https://megalinter.io
+  name: MegaLinter
+  
+  on:
+    pull_request:
+      branches: [main]
+  
+  permissions: read-all 
+  
+  env: # Comment env block if you don't want to apply fixes
+    # Apply linter fixes configuration
+    APPLY_FIXES: all # When active, APPLY_FIXES must also be defined as environment variable (in github/workflows/mega-linter.yml or other CI tool)
+    APPLY_FIXES_EVENT: none # Decide which event triggers application of fixes in a commit or a PR (pull_request, push, all)
+    APPLY_FIXES_MODE: commit # If APPLY_FIXES is used, defines if the fixes are directly committed (commit) or posted in a PR (pull_request)
+  
+  concurrency:
+    group: ${{ github.ref }}-${{ github.workflow }}
+    cancel-in-progress: true
+  
+  jobs:
+    megalinter:
+      name: MegaLinter
+      runs-on: ubuntu-latest
+      permissions:
+        contents: read
+        issues: write
+        pull-requests: write
+      steps:
+        # Git Checkout
+        - name: Checkout Code
+          uses: actions/checkout@v4
+          with:
+            token: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+            fetch-depth: 0 # If you use VALIDATE_ALL_CODEBASE = true, you can remove this line to improve performances
+        # MegaLinter
+        - name: MegaLinter
+          id: ml
+          # deployed v8.3.0, https://github.com/oxsecurity/megalinter/releases/tag/v8.3.0
+          uses: oxsecurity/megalinter@1fc052d03c7a43c78fe0fee19c9d648b749e0c01
+          env:
+            # All available variables are described in documentation
+            # https://megalinter.io/configuration/
+            VALIDATE_ALL_CODEBASE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }} # Validates all source when push on main, else just the git diff with main. Override with true if you always want to lint all sources
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Upload MegaLinter artifacts
+        - name: Archive production artifacts
+          if: success() || failure()
+          uses: actions/upload-artifact@v4
+          with:
+            name: MegaLinter reports
+            path: |
+              megalinter-reports
+              mega-linter.log
+  

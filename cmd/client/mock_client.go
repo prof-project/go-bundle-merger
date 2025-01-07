@@ -1,3 +1,4 @@
+// Package main provides a mock client for testing purposes.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -31,8 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"github.com/prof-project/go-bundle-merger/utils" 
-	pb "github.com/prof-project/prof-grpc/go/profpb" 
+	"github.com/prof-project/go-bundle-merger/utils"
 	"google.golang.org/grpc"
 )
 
@@ -64,7 +65,7 @@ func main() {
 	}
 	defer conn.Close()
 
-	client := pb.NewBundleMergerClient(conn)
+	client := relay_grpc.NewEnricherClient(conn)
 
 	// Start the Ethereum service.
 	n, ethservice := startEthService()
@@ -75,7 +76,7 @@ func main() {
 	ctx := context.Background()
 
 	// Start the EnrichBlock stream.
-	stream, err := client.EnrichBlock(ctx)
+	stream, err := client.EnrichBlockStream(ctx)
 	if err != nil {
 		log.Fatalf("Failed to start EnrichBlock stream: %v", err)
 	}

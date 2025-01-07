@@ -8,20 +8,8 @@ RUN apk update && apk add --no-cache git
 # Set the working directory
 WORKDIR /app
 
-# Define build-time variable for GitHub token
-ARG GITHUB_TOKEN
-
-# Configure Git to use the token for GitHub URLs
-RUN git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-
 # Copy go.mod and go.sum to leverage Docker cache
 COPY go.mod go.sum ./
-
-# Download Go modules
-RUN go mod download
-
-# Remove Git credentials to prevent them from being cached in image layers
-RUN git config --global --unset url."https://${GITHUB_TOKEN}@github.com/".insteadOf
 
 # Copy the rest of the application code
 COPY . .
@@ -32,11 +20,26 @@ WORKDIR /app/cmd/server
 # Build the Go application (specify the main.go as the entry point)
 RUN go build -o /enclave-server main.go
 
+# Install upx and compress the compiled binary
+RUN apk add --no-cache upx && upx -q -9 /enclave-server
+
 # Final Stage
-FROM alpine:latest
+FROM alpine:3.21
+
+# Install curl (healthcheck), create a user to run the service
+RUN apk add --no-cache curl && \
+    adduser -D -g '' appuser
+
+USER appuser
 
 # Copy the built binary from the builder stage
 COPY --from=builder /enclave-server /enclave-server
 
+# Expose the port your service listens on
+EXPOSE 80
+EXPOSE 50051
+
+HEALTHCHECK CMD curl --fail http://localhost:80/enhancer/health || exit 1
+
 # Set the entry point to run the server
-CMD ["/enclave-server"]
+ENTRYPOINT ["/enclave-server"]
