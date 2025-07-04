@@ -2,22 +2,28 @@
 package utils
 
 import (
-	"fmt"
-	"math/big"
-
-	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
 	builderApiV1 "github.com/attestantio/go-builder-client/api/v1"
 	v1 "github.com/attestantio/go-builder-client/api/v1"
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
-	"github.com/attestantio/go-eth2-client/spec/capella"
-	"github.com/attestantio/go-eth2-client/spec/deneb"
 	consensus "github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/attestantio/go-eth2-client/spec/phase0"
-	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
-	"github.com/ethereum/go-ethereum/beacon/engine"
+
+	"crypto/sha256"
+	"fmt"
+	"log"
+	"math/big"
+
+	builderApiDeneb "github.com/attestantio/go-builder-client/api/deneb"
+	denebapi "github.com/attestantio/go-builder-client/api/deneb"
+	"github.com/attestantio/go-eth2-client/spec/capella"
+	"github.com/attestantio/go-eth2-client/spec/deneb"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/holiman/uint256"
+
+	relay_grpc "github.com/bloXroute-Labs/relay-grpc"
+	"github.com/ethereum/go-ethereum/beacon/engine"
 )
 
 // ExecutionPayloadToProtoEnrichBlockRequest converts an execution payload to a proto enrich block request.
@@ -333,6 +339,103 @@ func DenebBlobsBundleToProtoBlobsBundle(blobBundle *builderApiDeneb.BlobsBundle)
 	return protoBlobsBundle
 }
 
+// DenebBlobsBundleToSidecars converts a BlobsBundle to a slice of BlobTxSidecar
+func DenebBlobsBundleToSidecars(blobBundle *builderApiDeneb.BlobsBundle) []*types.BlobTxSidecar {
+	if blobBundle == nil {
+		return nil
+	}
+
+	blobSidecars := make([]*types.BlobTxSidecar, len(blobBundle.Blobs))
+	for i := range blobBundle.Blobs {
+		var blob kzg4844.Blob
+		var commitment kzg4844.Commitment
+		var proof kzg4844.Proof
+
+		copy(blob[:], blobBundle.Blobs[i][:])
+		copy(commitment[:], blobBundle.Commitments[i][:])
+		copy(proof[:], blobBundle.Proofs[i][:])
+
+		blobSidecars[i] = &types.BlobTxSidecar{
+			Blobs:       []kzg4844.Blob{blob},
+			Commitments: []kzg4844.Commitment{commitment},
+			Proofs:      []kzg4844.Proof{proof},
+		}
+	}
+
+	return blobSidecars
+}
+
+// GetDenebPayload retrieves the Deneb payload from the given execution payload envelope.
+func GetDenebPayload(data *engine.ExecutionPayloadEnvelope) (*builderApiDeneb.ExecutionPayloadAndBlobsBundle, error) {
+	payload := data.ExecutionPayload
+	blobsBundle := data.BlobsBundle
+	baseFeePerGas, overflow := uint256.FromBig(payload.BaseFeePerGas)
+	if overflow {
+		return nil, fmt.Errorf("base fee per gas overflow")
+	}
+	transactions := make([]bellatrix.Transaction, len(payload.Transactions))
+	for i, tx := range payload.Transactions {
+		transactions[i] = bellatrix.Transaction(tx)
+	}
+	withdrawals := make([]*capella.Withdrawal, len(payload.Withdrawals))
+	for i, wd := range payload.Withdrawals {
+		withdrawals[i] = &capella.Withdrawal{
+			Index:          capella.WithdrawalIndex(wd.Index),
+			ValidatorIndex: phase0.ValidatorIndex(wd.Validator),
+			Address:        bellatrix.ExecutionAddress(wd.Address),
+			Amount:         phase0.Gwei(wd.Amount),
+		}
+	}
+	return &builderApiDeneb.ExecutionPayloadAndBlobsBundle{
+		ExecutionPayload: &deneb.ExecutionPayload{
+			ParentHash:    [32]byte(payload.ParentHash),
+			FeeRecipient:  [20]byte(payload.FeeRecipient),
+			StateRoot:     [32]byte(payload.StateRoot),
+			ReceiptsRoot:  [32]byte(payload.ReceiptsRoot),
+			LogsBloom:     types.BytesToBloom(payload.LogsBloom),
+			PrevRandao:    [32]byte(payload.Random),
+			BlockNumber:   payload.Number,
+			GasLimit:      payload.GasLimit,
+			GasUsed:       payload.GasUsed,
+			Timestamp:     payload.Timestamp,
+			ExtraData:     payload.ExtraData,
+			BaseFeePerGas: baseFeePerGas,
+			BlockHash:     [32]byte(payload.BlockHash),
+			Transactions:  transactions,
+			Withdrawals:   withdrawals,
+			BlobGasUsed:   *payload.BlobGasUsed,
+			ExcessBlobGas: *payload.ExcessBlobGas,
+		},
+		BlobsBundle: getBlobsBundle(blobsBundle),
+	}, nil
+}
+
+func getBlobsBundle(blobsBundle *engine.BlobsBundleV1) *builderApiDeneb.BlobsBundle {
+	commitments := make([]deneb.KZGCommitment, len(blobsBundle.Commitments))
+	proofs := make([]deneb.KZGProof, len(blobsBundle.Proofs))
+	blobs := make([]deneb.Blob, len(blobsBundle.Blobs))
+
+	// we assume the lengths for blobs bundle is validated beforehand to be the same
+	for i := range blobsBundle.Blobs {
+		var commitment deneb.KZGCommitment
+		copy(commitment[:], blobsBundle.Commitments[i][:])
+		commitments[i] = commitment
+
+		var proof deneb.KZGProof
+		copy(proof[:], blobsBundle.Proofs[i][:])
+		proofs[i] = proof
+
+		var blob deneb.Blob
+		copy(blob[:], blobsBundle.Blobs[i][:])
+		blobs[i] = blob
+	}
+	return &builderApiDeneb.BlobsBundle{
+		Commitments: commitments,
+		Proofs:      proofs,
+		Blobs:       blobs,
+	}
+}
+
 // HeaderToProtoHeader converts a header to a proto header.
 func HeaderToProtoHeader(header *deneb.ExecutionPayloadHeader) *relay_grpc.ExecutionPayloadHeader {
 	if header == nil {
@@ -481,4 +584,109 @@ func DenebPayloadToProtoPayload(payload *deneb.ExecutionPayload) *relay_grpc.Exe
 	}
 
 	return protoPayload
+}
+
+// ExecutionPayloadV3ToBlock converts an execution payload V3 to a block.
+func ExecutionPayloadV3ToBlock(payload *deneb.ExecutionPayload, profTxs [][]byte, blobsBundle *denebapi.BlobsBundle, parentBeaconBlockRoot common.Hash) (*types.Block, error) {
+	// Add debug logging
+	log.Printf("[DEBUG] BlobsBundle nil? %v", blobsBundle == nil)
+
+	// TODO: remove this once we support blobs
+	// if blobsBundle != nil {
+	// 	log.Printf("[DEBUG] Number of commitments: %d", len(blobsBundle.Commitments))
+	// 	log.Printf("[DEBUG] Number of blobs: %d", len(blobsBundle.Blobs))
+	// 	return nil, fmt.Errorf("blob transactions are not yet supported (found transaction with %d blobs)", len(blobsBundle.Blobs))
+	// }
+
+	// Convert payload transactions to [][]byte
+	txs := make([][]byte, len(payload.Transactions)+len(profTxs))
+	for i, tx := range payload.Transactions {
+		txs[i] = tx
+	}
+	// Copy prof transactions
+	copy(txs[len(payload.Transactions):], profTxs)
+
+	// Calculate versioned hashes first
+	versionedHashes := calculateVersionedHashes(blobsBundle)
+	log.Printf("[DEBUG] Calculated versioned hashes: %v", versionedHashes)
+
+	// Create executable data
+	executableData := engine.ExecutableData{
+		ParentHash:    common.Hash(payload.ParentHash),
+		FeeRecipient:  common.Address(payload.FeeRecipient),
+		StateRoot:     common.Hash(payload.StateRoot),
+		ReceiptsRoot:  common.Hash(payload.ReceiptsRoot),
+		LogsBloom:     payload.LogsBloom[:],
+		Random:        common.Hash(payload.PrevRandao),
+		Number:        payload.BlockNumber,
+		GasLimit:      payload.GasLimit,
+		GasUsed:       payload.GasUsed,
+		Timestamp:     payload.Timestamp,
+		ExtraData:     payload.ExtraData,
+		BaseFeePerGas: payload.BaseFeePerGas.ToBig(),
+		BlockHash:     common.Hash(payload.BlockHash),
+		Transactions:  txs,
+		Withdrawals:   convertWithdrawals(payload.Withdrawals),
+		BlobGasUsed:   &payload.BlobGasUsed,
+		ExcessBlobGas: &payload.ExcessBlobGas,
+	}
+
+	// Check for blob transactions and log details
+	var blobTxCount int
+	for _, tx := range txs {
+		var decodedTx types.Transaction
+		if err := decodedTx.UnmarshalBinary(tx); err == nil {
+			if len(decodedTx.BlobHashes()) > 0 {
+				blobTxCount++
+				log.Printf("[DEBUG] Found blob transaction with hashes: %v", decodedTx.BlobHashes())
+			}
+		}
+	}
+	log.Printf("[DEBUG] Number of blob transactions found: %d", blobTxCount)
+	log.Printf("[DEBUG] Number of versioned hashes being passed: %d", len(versionedHashes))
+
+	// Use ExecutableDataToBlock with versioned hashes
+	return engine.ExecutableDataToBlockNoHash(executableData, versionedHashes, &parentBeaconBlockRoot, nil)
+}
+
+// Helper function to convert withdrawals
+func convertWithdrawals(withdrawals []*capella.Withdrawal) []*types.Withdrawal {
+	result := make([]*types.Withdrawal, len(withdrawals))
+	for i, w := range withdrawals {
+		result[i] = &types.Withdrawal{
+			Index:     uint64(w.Index),
+			Validator: uint64(w.ValidatorIndex),
+			Address:   common.Address(w.Address),
+			Amount:    uint64(w.Amount),
+		}
+	}
+	return result
+}
+
+// Helper function to calculate versioned hashes
+func calculateVersionedHashes(blobsBundle *denebapi.BlobsBundle) []common.Hash {
+	if blobsBundle == nil {
+		log.Printf("[DEBUG] BlobsBundle is nil, returning empty versioned hashes")
+		return []common.Hash{}
+	}
+
+	log.Printf("[DEBUG] Calculating versioned hashes for %d commitments", len(blobsBundle.Commitments))
+
+	hasher := sha256.New()
+	versionedHashes := make([]common.Hash, len(blobsBundle.Commitments))
+	for i, commitment := range blobsBundle.Commitments {
+		log.Printf("[DEBUG] Processing commitment %d: %x", i, commitment)
+		c := kzg4844.Commitment(commitment)
+		computed := kzg4844.CalcBlobHashV1(hasher, &c)
+		versionedHashes[i] = common.Hash(computed)
+		log.Printf("[DEBUG] Calculated versioned hash %d: 0x%x", i, versionedHashes[i])
+		hasher.Reset()
+	}
+
+	log.Printf("[DEBUG] Final versioned hashes: %v", versionedHashes)
+	for i, hash := range versionedHashes {
+		log.Printf("[DEBUG] Hash %d: 0x%x", i, hash)
+	}
+
+	return versionedHashes
 }

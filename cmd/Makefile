@@ -2,4 +2,4 @@ _build:
 	./build.sh
 
 _run:
-	cd bin; ./server
+	cd bin; ./server $(ARGS)
